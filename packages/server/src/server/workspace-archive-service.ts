@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
 import type { Logger } from "pino";
@@ -12,6 +13,7 @@ import {
   runWorktreeTeardownCommands,
   WorktreeTeardownError,
 } from "../utils/worktree.js";
+import { getCheckoutUniqueWork, type CheckoutUniqueWork } from "../utils/checkout-git.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
 import type {
   PersistedWorkspaceRecord,
@@ -74,6 +76,17 @@ export interface ArchiveResult {
 export interface ArchiveByScopeRequest {
   scope: ArchiveScope;
   requestId: string;
+  // Refuse, before tearing anything down, when the archive would delete a Paseo-owned
+  // worktree that has uncommitted changes or unpublished commits. The app confirms with
+  // the user instead, so only CLI and MCP callers opt in.
+  refuseUniqueWork?: boolean;
+}
+
+export class WorkspaceArchiveUniqueWorkError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkspaceArchiveUniqueWorkError";
+  }
 }
 
 export async function requireActiveWorkspaceForArchive(
@@ -133,6 +146,10 @@ async function archiveByScopeWithPriority(
 ): Promise<ArchiveResult> {
   const target = await resolveArchiveTarget(dependencies, request.scope);
   const targetWorkspaceIds = target.workspaceIds;
+
+  if (request.refuseUniqueWork === true) {
+    await assertArchiveLosesNoUniqueWork(dependencies, target);
+  }
 
   await stopWorkspaceSetups(dependencies, target.setupWorkspaceIds, request.requestId);
 
@@ -244,6 +261,68 @@ async function resolveArchiveTarget(
     setupWorkspaceIds: targetWorkspaces.map((workspace) => workspace.workspaceId),
     workspaceIds: targetWorkspaces.map((workspace) => workspace.workspaceId),
   };
+}
+
+async function assertArchiveLosesNoUniqueWork(
+  dependencies: ArchiveDependencies,
+  target: ArchiveTarget,
+): Promise<void> {
+  const backing = target.backing;
+  if (!backing?.isPaseoOwnedWorktree || !existsSync(backing.path)) {
+    return;
+  }
+  const activeWorkspaces = await dependencies.listActiveWorkspaces();
+  if (
+    !(await isDirectoryUnreferenced(
+      activeWorkspaces,
+      backing.path,
+      new Set(target.workspaceIds),
+      dependencies,
+    ))
+  ) {
+    return;
+  }
+
+  let uniqueWork: CheckoutUniqueWork | null;
+  try {
+    uniqueWork = await getCheckoutUniqueWork(backing.path, {
+      paseoHome: dependencies.paseoHome,
+      worktreesRoot: dependencies.paseoWorktreesBaseRoot,
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new WorkspaceArchiveUniqueWorkError(
+      `Refusing to archive: could not check the worktree at ${backing.path} for uncommitted changes or unpublished commits (${reason}). ${ARCHIVE_FORCE_HINT}`,
+    );
+  }
+  if (!uniqueWork) {
+    return;
+  }
+
+  const losses = describeUniqueWork(uniqueWork);
+  if (losses.length === 0) {
+    return;
+  }
+  throw new WorkspaceArchiveUniqueWorkError(
+    `Refusing to archive: the worktree at ${backing.path} has ${losses.join(" and ")}, and archiving deletes the worktree. ${ARCHIVE_FORCE_HINT}`,
+  );
+}
+
+const ARCHIVE_FORCE_HINT =
+  "Commit and push first, or archive with force (CLI --force, MCP force: true) to archive anyway.";
+
+function describeUniqueWork(uniqueWork: CheckoutUniqueWork): string[] {
+  const losses: string[] = [];
+  const changes = uniqueWork.uncommittedChangeCount;
+  if (changes > 0) {
+    losses.push(`${changes} uncommitted ${changes === 1 ? "change" : "changes"}`);
+  }
+  const commits = uniqueWork.unpublishedCommitCount;
+  if (commits > 0) {
+    const branch = uniqueWork.currentBranch ? ` on ${uniqueWork.currentBranch}` : "";
+    losses.push(`${commits} unpublished ${commits === 1 ? "commit" : "commits"}${branch}`);
+  }
+  return losses;
 }
 
 async function stopWorkspaceSetups(

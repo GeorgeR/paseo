@@ -1385,15 +1385,19 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     "archive_workspace",
     {
       title: "Archive workspace",
-      description: "Archive a workspace and everything it owns.",
-      inputSchema: { workspaceId: z.string().min(1) },
+      description:
+        "Archive a workspace and everything it owns. Refuses when this would delete a Paseo worktree with uncommitted changes or unpublished commits; pass force: true to archive anyway.",
+      inputSchema: {
+        workspaceId: z.string().min(1),
+        force: z.boolean().optional().default(false),
+      },
       outputSchema: {
         workspaceId: z.string(),
         archivedAgentIds: z.array(z.string()),
         removedDirectory: z.boolean(),
       },
     },
-    async ({ workspaceId }) => {
+    async ({ workspaceId, force = false }) => {
       if (!options.listActiveWorkspaces) {
         throw new Error("Active workspace lister is required to archive workspaces");
       }
@@ -1411,6 +1415,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         {
           requestId: "mcp:archive_workspace",
           scope: { kind: "workspace", workspaceId: workspace.workspaceId },
+          refuseUniqueWork: !force,
         },
       );
       return {

@@ -19,7 +19,11 @@ const workspaceArchiveSchema: OutputSchema<WorkspaceArchiveResult> = {
 
 export async function runArchiveCommand(
   workspaceId: string,
-  options: { host?: string; daemonTarget: import("../../utils/daemon-target.js").DaemonTarget },
+  options: {
+    host?: string;
+    force?: boolean;
+    daemonTarget: import("../../utils/daemon-target.js").DaemonTarget;
+  },
   _command: Command,
 ): Promise<SingleResult<WorkspaceArchiveResult>> {
   const host = getDaemonHost({ target: options.daemonTarget });
@@ -31,7 +35,19 @@ export async function runArchiveCommand(
     } satisfies CommandError;
   });
   try {
-    const payload = await client.archiveWorkspace(workspaceId);
+    const refuseUniqueWork = options.force !== true;
+    // COMPAT(workspaceArchiveRefuseUniqueWork): added in v0.11.3, remove gate after 2027-04-20.
+    if (
+      refuseUniqueWork &&
+      client.getLastServerInfoMessage()?.features?.workspaceArchiveRefuseUniqueWork !== true
+    ) {
+      throw {
+        code: "DAEMON_UPDATE_REQUIRED",
+        message:
+          "This host cannot check a worktree for uncommitted changes or unpublished commits before archiving. Update the host, or pass --force to archive anyway.",
+      } satisfies CommandError;
+    }
+    const payload = await client.archiveWorkspace(workspaceId, undefined, { refuseUniqueWork });
     if (payload.error) {
       throw new Error(payload.error);
     }

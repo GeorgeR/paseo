@@ -184,7 +184,10 @@ paseo run --workspace <workspace-id> "implement authentication"
 paseo workspace rename <workspace-id> "Auth rework"
 paseo workspace rename <workspace-id> --reset   # back to the branch or directory name
 paseo workspace archive <workspace-id>
+paseo workspace archive <workspace-id> --force   # archive even with uncommitted or unpublished work
 ```
+
+`workspace archive` refuses when it would delete a Paseo worktree that has uncommitted changes or commits not pushed to its upstream, and the error lists them. Pass `--force` to archive anyway.
 
 Add `--forge <name>` to PR checkout when Paseo cannot infer the forge from the source checkout. See [Git worktrees](/docs/worktrees) for setup hooks and services.
 

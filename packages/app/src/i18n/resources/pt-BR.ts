@@ -496,6 +496,8 @@ export const ptBR: TranslationResources = {
       confirmRevert: {
         title: "Descartar alterações?",
         message: 'As alterações em "{{name}}" serão descartadas permanentemente.',
+        conflictWarning:
+          "Este arquivo tem um conflito de merge, então as alterações recebidas do merge também serão perdidas.",
         confirm: "Descartar",
         cancel: "Cancelar",
         failed: "Falha ao descartar alterações",
@@ -854,6 +856,7 @@ export const ptBR: TranslationResources = {
           disabled: "Merge automático desativado",
         },
         unavailable: {
+          commitConflicts: "Resolva os conflitos antes de fazer commit.",
           viewPrNoForge:
             "Ver {{noun}} não está disponível agora porque o {{brand}} não está conectado",
           pullNoRemote:

@@ -843,6 +843,32 @@ const x = 1;
     ]);
   });
 
+  it("refuses to commit while files have unresolved merge conflicts", async () => {
+    commitFile(repoDir, "other.txt", "other\n", "add other file");
+    execFileSync("git", ["checkout", "-b", "feature"], { cwd: repoDir });
+    commitFile(repoDir, "file.txt", "feature\n", "feature edit");
+    commitFile(repoDir, "clash.txt", "feature clash\n", "feature clash");
+    execFileSync("git", ["checkout", "main"], { cwd: repoDir });
+    commitFile(repoDir, "file.txt", "main\n", "main edit");
+    commitFile(repoDir, "clash.txt", "main clash\n", "main clash");
+    spawnSync("git", ["-c", "commit.gpgsign=false", "merge", "feature"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "other.txt"), "other edited\n");
+    const readLines = (args: string[]) =>
+      execFileSync("git", args, { cwd: repoDir }).toString().trim().split("\n").filter(Boolean);
+    const [headBefore] = readLines(["rev-parse", "HEAD"]);
+
+    await expect(commitAll(repoDir, "commit with conflicts")).rejects.toThrow(
+      "Resolve merge conflicts before committing: clash.txt, file.txt",
+    );
+
+    expect(readLines(["rev-parse", "HEAD"])).toEqual([headBefore]);
+    expect(readLines(["diff", "--name-only", "--diff-filter=U"])).toEqual([
+      "clash.txt",
+      "file.txt",
+    ]);
+    expect(readLines(["diff", "--cached", "--name-only"])).not.toContain("other.txt");
+  });
+
   it("returns checkout root metadata for normal repos", async () => {
     const status = await getCheckoutStatus(repoDir);
     expect(status.isGit).toBe(true);

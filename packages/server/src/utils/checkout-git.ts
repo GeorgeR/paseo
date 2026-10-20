@@ -873,6 +873,16 @@ export class MergeFromBaseConflictError extends Error {
   }
 }
 
+export class UnresolvedMergeConflictsError extends Error {
+  readonly conflictFiles: string[];
+
+  constructor(conflictFiles: string[]) {
+    super(`Resolve merge conflicts before committing: ${conflictFiles.join(", ")}`);
+    this.name = "UnresolvedMergeConflictsError";
+    this.conflictFiles = conflictFiles;
+  }
+}
+
 export interface AheadBehind {
   ahead: number;
   behind: number;
@@ -3565,6 +3575,10 @@ export async function commitChanges(
   options: { message: string; addAll?: boolean },
 ): Promise<void> {
   await requireGitRepo(cwd);
+  const unmergedPaths = await listUnmergedPaths(cwd);
+  if (unmergedPaths.size > 0) {
+    throw new UnresolvedMergeConflictsError(Array.from(unmergedPaths).sort());
+  }
   if (options.addAll ?? true) {
     await runGitCommand(["add", "-A"], { cwd, timeout: 120_000 });
   }

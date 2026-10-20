@@ -93,6 +93,10 @@ import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
 import { isWeb } from "@/constants/platform";
 import { usePublishWorkingDiffAttachment, useWorkingDiff } from "@/git/use-working-diff";
+import {
+  buildDiscardConfirmationMessage,
+  isDiscardTargetConflicted,
+} from "@/git/discard-confirmation";
 import type { CheckoutStatusPayload } from "@/git/use-status-query";
 import { DiffTooLargeState } from "@/git/diff-too-large-state";
 import { openDesktopTarget, useDesktopOpenTargets } from "@/workspace/desktop-open-targets";
@@ -130,10 +134,12 @@ function useDiscardChangesAction({
   serverId,
   cwd,
   diffMode,
+  files,
 }: {
   serverId: string;
   cwd: string;
   diffMode: "uncommitted" | "base";
+  files: ParsedDiffFile[];
 }): ((path: string, oldPath?: string) => void) | undefined {
   const { t } = useTranslation();
   const toast = useToast();
@@ -146,7 +152,11 @@ function useDiscardChangesAction({
     async (path: string, oldPath?: string) => {
       const confirmed = await confirmDialog({
         title: t("workspace.fileActions.confirmRevert.title"),
-        message: t("workspace.fileActions.confirmRevert.message", { name: path }),
+        message: buildDiscardConfirmationMessage({
+          path,
+          conflicted: isDiscardTargetConflicted(files, path),
+          t,
+        }),
         confirmLabel: t("workspace.fileActions.confirmRevert.confirm"),
         cancelLabel: t("workspace.fileActions.confirmRevert.cancel"),
         destructive: true,
@@ -166,7 +176,7 @@ function useDiscardChangesAction({
         );
       }
     },
-    [cwd, discardChanges, serverId, t, toast],
+    [cwd, discardChanges, files, serverId, t, toast],
   );
   const handleDiscardPath = useCallback(
     (path: string, oldPath?: string) => {
@@ -1669,7 +1679,7 @@ export function ChangesSurface({
     },
     [client, cwd, t, toast],
   );
-  const onRevertPath = useDiscardChangesAction({ serverId, cwd, diffMode });
+  const onRevertPath = useDiscardChangesAction({ serverId, cwd, diffMode, files });
   const [localFocusRequest, setLocalFocusRequest] = useState<{
     path: string;
     revision: number;

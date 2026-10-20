@@ -496,6 +496,8 @@ export const ru: TranslationResources = {
       confirmRevert: {
         title: "Отменить изменения?",
         message: "Изменения в «{{name}}» будут безвозвратно отменены.",
+        conflictWarning:
+          "В этом файле есть конфликт слияния, поэтому входящие изменения слияния тоже будут потеряны.",
         confirm: "Отменить",
         cancel: "Отмена",
         failed: "Не удалось отменить изменения",
@@ -858,6 +860,7 @@ export const ru: TranslationResources = {
           disabled: "Автослияние отключено",
         },
         unavailable: {
+          commitConflicts: "Разрешите конфликты перед коммитом.",
           viewPrNoForge: "Просмотр {{noun}} сейчас недоступен: {{brand}} не подключён.",
           pullNoRemote:
             "Получение изменений недоступно: эта ветка ещё не связана с удалённым репозиторием.",

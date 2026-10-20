@@ -73,6 +73,7 @@ function createInput(
     isPaseoOwnedWorktree: false,
     isOnBaseBranch: true,
     hasUncommittedChanges: false,
+    hasConflictedFiles: false,
     baseRefAvailable: true,
     baseRefLabel: "main",
     aheadCount: 0,
@@ -409,6 +410,28 @@ describe("git-actions-policy", () => {
     expect(action?.unavailableMessage).toBe(
       "Pull and push isn't available while you have local changes so commit or stash them first",
     );
+  });
+
+  it("makes commit unavailable while any changed file has an unresolved conflict", () => {
+    const actions = buildGitActions(
+      createInput({ hasUncommittedChanges: true, hasConflictedFiles: true }),
+    );
+    const commit = [actions.primary, ...actions.secondary, ...actions.menu].find(
+      (entry) => entry?.id === "commit",
+    );
+
+    expect(commit?.unavailableMessage).toBe("Resolve conflicts before committing.");
+  });
+
+  it("keeps commit available when no changed file is conflicted", () => {
+    const actions = buildGitActions(
+      createInput({ hasUncommittedChanges: true, hasConflictedFiles: false }),
+    );
+    const commit = [actions.primary, ...actions.secondary, ...actions.menu].find(
+      (entry) => entry?.id === "commit",
+    );
+
+    expect(commit).toMatchObject({ disabled: false, unavailableMessage: undefined });
   });
 
   it("hides Git actions for a non-Git workspace", () => {

@@ -491,6 +491,8 @@ export const ar: TranslationResources = {
       confirmRevert: {
         title: "تجاهل التغييرات؟",
         message: 'سيتم تجاهل التغييرات في "{{name}}" نهائيًا.',
+        conflictWarning:
+          "هذا الملف يحتوي على تعارض دمج، لذا ستُفقد أيضًا التغييرات الواردة من الدمج.",
         confirm: "تجاهل",
         cancel: "إلغاء",
         failed: "فشل تجاهل التغييرات",
@@ -850,6 +852,7 @@ export const ar: TranslationResources = {
           disabled: "تم تعطيل الدمج التلقائي",
         },
         unavailable: {
+          commitConflicts: "حُلّ التعارضات قبل الالتزام.",
           viewPrNoForge: "عرض {{noun}} غير متاح الآن لأن {{brand}} غير متصل",
           pullNoRemote: "السحب غير متاح هنا لأن هذا الفرع غير متصل بجهاز التحكم عن بعد بعد",
           pullDirty: "السحب غير متاح أثناء وجود تغييرات محلية، لذا قم بتنفيذها أو تخزينها أولاً",

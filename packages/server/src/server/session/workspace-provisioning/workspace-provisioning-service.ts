@@ -16,6 +16,7 @@ import {
   type WorkspaceRegistry,
 } from "../../workspace-registry.js";
 import type { WorkspaceGitService } from "../../workspace-git-service.js";
+import { GitProbeError } from "../../../utils/checkout-git.js";
 import type { CreatePaseoWorktreeWorkflowResult } from "../../worktree-session.js";
 import { deriveProjectKey } from "../../project-key.js";
 import { areEquivalentPaths, createRealpathAwarePathMatcher } from "../../../utils/path.js";
@@ -111,6 +112,22 @@ export function createWorkspaceProvisioningService(deps: {
   const { serverId, workspaceRegistry, projectRegistry, workspaceGitService, logger } = deps;
 
   /**
+   * Reads a checkout to update a record that already exists. A Git failure
+   * reads nothing, so it returns null and the recorded placement stands.
+   */
+  async function readCheckoutForExistingRecord(
+    cwd: string,
+  ): Promise<ProjectCheckoutLitePayload | null> {
+    try {
+      return await workspaceGitService.getCheckout(cwd, { throwOnGitFailure: true });
+    } catch (error) {
+      if (!(error instanceof GitProbeError)) throw error;
+      logger.warn({ err: error, cwd }, "Kept recorded placement after Git failed");
+      return null;
+    }
+  }
+
+  /**
    * Placement facts at a workspace directory, or null when there is nothing
    * there to read. A git read answers "not a checkout" for a plain directory
    * and for a directory that is gone, and only the first is evidence that a
@@ -120,7 +137,8 @@ export function createWorkspaceProvisioningService(deps: {
    */
   async function observeWorkspaceCheckout(cwd: string): Promise<ProjectCheckoutLitePayload | null> {
     if (!(await deps.isDirectory(cwd))) return null;
-    const checkout = await workspaceGitService.getCheckout(cwd);
+    const checkout = await readCheckoutForExistingRecord(cwd);
+    if (!checkout) return null;
     if (!checkout.isGit && !(await deps.isDirectory(cwd))) return null;
     return checkout;
   }
@@ -483,7 +501,8 @@ export function createWorkspaceProvisioningService(deps: {
     const projectCheckout =
       workspaceCwd && workspaceCheckout && areEquivalentPaths(project.rootPath, workspaceCwd)
         ? workspaceCheckout
-        : await workspaceGitService.getCheckout(project.rootPath);
+        : await readCheckoutForExistingRecord(project.rootPath);
+    if (!projectCheckout) return project;
     const kind: PersistedProjectRecord["kind"] = projectCheckout.isGit ? "git" : "non_git";
     const projectKey = deriveProjectKey({
       rootPath: project.rootPath,

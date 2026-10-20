@@ -534,7 +534,9 @@ export class WorkspaceReconciliationService {
         mainRepoRoot: null,
       };
     }
-    return this.workspaceGitService.getCheckout(cwd);
+    // A Git failure is not evidence the checkout stopped being Git. It throws
+    // here so the caller skips this root instead of rewriting its placement.
+    return this.workspaceGitService.getCheckout(cwd, { throwOnGitFailure: true });
   }
 
   private inspectDirectory(targetPath: string): DirectoryState {

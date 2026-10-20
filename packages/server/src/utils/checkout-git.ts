@@ -823,6 +823,22 @@ export class NotGitRepoError extends Error {
   }
 }
 
+/**
+ * Git could not say whether `cwd` is a repository: dubious ownership, a missing
+ * or timed-out `git`, a lock, an unreadable config. Unlike NotGitRepoError this
+ * is not an observation, so callers must not record the directory as non-Git.
+ */
+export class GitProbeError extends Error {
+  readonly cwd: string;
+
+  constructor(cwd: string, cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(`Git failed to inspect ${cwd}: ${detail}`, { cause });
+    this.name = "GitProbeError";
+    this.cwd = cwd;
+  }
+}
+
 export class MergeConflictError extends Error {
   readonly baseRef: string;
   readonly currentBranch: string;
@@ -1061,7 +1077,11 @@ async function getRebaseHeadBranch(cwd: string, context?: CheckoutContext): Prom
   return results.find((result): result is string => result !== null) ?? null;
 }
 
-async function getWorktreeRoot(cwd: string, context?: CheckoutContext): Promise<string | null> {
+/**
+ * Returns the worktree root, or null when `cwd` is not in a repository or does
+ * not exist. Throws GitProbeError when Git fails for any other reason.
+ */
+async function probeWorktreeRoot(cwd: string, context?: CheckoutContext): Promise<string | null> {
   try {
     const { stdout } = await getRunGitCommand(context)(["rev-parse", "--show-toplevel"], {
       cwd,
@@ -1070,12 +1090,36 @@ async function getWorktreeRoot(cwd: string, context?: CheckoutContext): Promise<
     });
     return parseGitRevParsePath(stdout);
   } catch (error) {
-    if (!isNotGitRepositoryError(error)) {
+    if (isNotGitRepositoryError(error)) {
+      return null;
+    }
+    if (!(await isDirectory(cwd))) {
       context?.logger?.warn(
         { err: error, cwd },
         "Git worktree discovery failed; treating directory as non-Git",
       );
+      return null;
     }
+    throw new GitProbeError(cwd, error);
+  }
+}
+
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await statFile(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+async function getWorktreeRoot(cwd: string, context?: CheckoutContext): Promise<string | null> {
+  try {
+    return await probeWorktreeRoot(cwd, context);
+  } catch (error) {
+    context?.logger?.warn(
+      { err: error, cwd },
+      "Git worktree discovery failed; treating directory as non-Git",
+    );
     return null;
   }
 }
@@ -1820,7 +1864,7 @@ async function inspectCheckoutContext(
   cwd: string,
   context?: CheckoutContext,
 ): Promise<CheckoutInspectionContext | null> {
-  const root = await getWorktreeRoot(cwd, context);
+  const root = await probeWorktreeRoot(cwd, context);
   if (!root) {
     return null;
   }

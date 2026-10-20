@@ -12,6 +12,7 @@ import {
   type BranchCheckoutResolution,
   type BranchSuggestion,
   type CheckoutSnapshotFacts,
+  type CheckoutStatusResult,
   type CheckoutDiffCompare,
   type CheckoutDiffResult,
   getCheckoutDiff,
@@ -22,6 +23,7 @@ import {
   getCheckoutWorktreeState,
   getPullRequestStatus,
   forgeAuthStateFromError,
+  GitProbeError,
   hasOriginRemote,
   listBranchSuggestions,
   resolveRepositoryDefaultBranch,
@@ -202,6 +204,10 @@ export interface WorkspaceGitRuntimeSnapshot {
   };
 }
 
+export interface WorkspaceGitCheckoutOptions {
+  throwOnGitFailure?: boolean;
+}
+
 export interface WorkspaceGitService {
   registerWorkspace(
     params: { cwd: string },
@@ -210,7 +216,16 @@ export interface WorkspaceGitService {
 
   onSnapshotUpdated(listener: WorkspaceGitSnapshotUpdatedListener): WorkspaceGitSubscription;
   peekSnapshot(cwd: string): WorkspaceGitRuntimeSnapshot | null;
-  getCheckout(cwd: string): Promise<ProjectCheckoutLitePayload>;
+  /**
+   * Reads live checkout facts. When Git fails for a reason other than "not a
+   * repository", the default reports a non-Git checkout (fine for creating a
+   * record); `throwOnGitFailure` rethrows the GitProbeError instead so callers
+   * that would rewrite an existing record can skip it.
+   */
+  getCheckout(
+    cwd: string,
+    options?: WorkspaceGitCheckoutOptions,
+  ): Promise<ProjectCheckoutLitePayload>;
   getSnapshot(
     cwd: string,
     options?: WorkspaceGitSnapshotOptions,
@@ -757,14 +772,26 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     return this.requestWorkspaceSnapshot(target, request);
   }
 
-  async getCheckout(cwd: string): Promise<ProjectCheckoutLitePayload> {
+  async getCheckout(
+    cwd: string,
+    options?: WorkspaceGitCheckoutOptions,
+  ): Promise<ProjectCheckoutLitePayload> {
     this.assertNotDisposed();
     const normalizedCwd = resolve(cwd);
-    const status = await this.deps.getCheckoutStatus(normalizedCwd, {
-      paseoHome: this.paseoHome,
-      worktreesRoot: this.worktreesRoot,
-      logger: this.logger,
-    });
+    const status = await this.deps
+      .getCheckoutStatus(normalizedCwd, {
+        paseoHome: this.paseoHome,
+        worktreesRoot: this.worktreesRoot,
+        logger: this.logger,
+      })
+      .catch((error: unknown): CheckoutStatusResult => {
+        if (!(error instanceof GitProbeError) || options?.throwOnGitFailure) throw error;
+        this.logger.warn(
+          { err: error, cwd: normalizedCwd },
+          "Git worktree discovery failed; treating directory as non-Git",
+        );
+        return { isGit: false };
+      });
     if (!status.isGit) {
       return checkoutLiteFromGitSnapshot(normalizedCwd, {
         isGit: false,

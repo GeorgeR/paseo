@@ -61,6 +61,8 @@ export interface WorktreeConfig {
 
 export interface CreatedWorktree extends WorktreeConfig {
   comparisonBaseRef: string | null;
+  // Set when setup was requested but skipped, e.g. the project folder is missing on the branch.
+  setupWarning?: string;
 }
 
 export interface WorktreeRuntimeEnv {
@@ -218,6 +220,9 @@ export interface CreateWorktreeOptions {
   worktreeSlug: string;
   source: WorktreeSource;
   runSetup: boolean;
+  // The project's folder relative to its source worktree. Setup runs from, and reads
+  // paseo.json from, the same folder inside the new worktree. Defaults to the worktree root.
+  project?: { sourceCwd: string; relativeCwd: string };
   paseoHome?: string;
   worktreesRoot?: string;
 }
@@ -642,6 +647,8 @@ async function inferRepoRootPathFromWorktreePath(worktreePath: string): Promise<
 
 export async function runWorktreeSetupCommands(options: {
   worktreePath: string;
+  // Folder to read paseo.json from and run commands in. Defaults to worktreePath.
+  setupCwd?: string;
   branchName: string;
   cleanupOnFailure: boolean;
   repoRootPath?: string;
@@ -650,7 +657,8 @@ export async function runWorktreeSetupCommands(options: {
   onEvent?: (event: WorktreeSetupCommandProgressEvent) => void;
 }): Promise<WorktreeSetupCommandResult[]> {
   // Read paseo.json from the worktree (it will have the same content as the source repo)
-  const setupCommands = getWorktreeSetupCommands(options.worktreePath);
+  const setupCwd = options.setupCwd ?? options.worktreePath;
+  const setupCommands = getWorktreeSetupCommands(setupCwd);
   if (setupCommands.length === 0) {
     return [];
   }
@@ -669,7 +677,7 @@ export async function runWorktreeSetupCommands(options: {
     const result = options.onEvent
       ? await execSetupCommandStreamed({
           command: cmd,
-          cwd: options.worktreePath,
+          cwd: setupCwd,
           env: setupEnv,
           index: index + 1,
           total: setupCommands.length,
@@ -677,7 +685,7 @@ export async function runWorktreeSetupCommands(options: {
           onEvent: options.onEvent,
         })
       : await execSetupCommand(cmd, {
-          cwd: options.worktreePath,
+          cwd: setupCwd,
           env: setupEnv,
         });
     results.push(result);
@@ -1185,6 +1193,14 @@ async function pathExists(path: string): Promise<boolean> {
   }
 }
 
+async function isDirectoryPath(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 async function removeDirectoryWithRetries(path: string): Promise<void> {
   if (!(await pathExists(path))) {
     return;
@@ -1222,6 +1238,7 @@ export const createWorktree = async ({
   source,
   worktreeSlug,
   runSetup,
+  project,
   paseoHome,
   worktreesRoot,
 }: CreateWorktreeOptions): Promise<CreatedWorktree> => {
@@ -1269,18 +1286,35 @@ export const createWorktree = async ({
 
   await seedPaseoConfigFile({ sourceCwd: cwd, targetCwd: worktreePath });
 
+  let setupWarning: string | undefined;
   if (runSetup) {
-    await runWorktreeSetupCommands({
-      worktreePath,
-      branchName: sourcePlan.branchName,
-      cleanupOnFailure: true,
-    });
+    const setupCwd = project
+      ? mapWorkspaceRelativeCwdToWorktree({
+          relativeWorkspaceCwd: project.relativeCwd,
+          targetWorktreePath: worktreePath,
+        })
+      : worktreePath;
+    if (!(await isDirectoryPath(setupCwd))) {
+      // Never fall back to the repository root's paseo.json: it belongs to another project.
+      setupWarning = `Skipped worktree setup: project folder ${project?.relativeCwd} does not exist on branch ${sourcePlan.branchName} (${setupCwd})`;
+    } else {
+      if (project) {
+        await seedPaseoConfigFile({ sourceCwd: project.sourceCwd, targetCwd: setupCwd });
+      }
+      await runWorktreeSetupCommands({
+        worktreePath,
+        setupCwd,
+        branchName: sourcePlan.branchName,
+        cleanupOnFailure: true,
+      });
+    }
   }
 
   return {
     branchName: sourcePlan.branchName,
     worktreePath,
     comparisonBaseRef: sourcePlan.metadataBaseRef ?? sourcePlan.metadataBaseRefName,
+    ...(setupWarning ? { setupWarning } : {}),
   };
 };
 

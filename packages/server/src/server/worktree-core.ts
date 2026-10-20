@@ -1,6 +1,8 @@
+import { resolve } from "node:path";
 import { createNameId } from "mnemonic-id";
 
 import type { ForgeService } from "../services/forge-service.js";
+import { getRealpathAwareRelativePath } from "../utils/path.js";
 import {
   createWorktree,
   slugify,
@@ -35,7 +37,7 @@ export interface CreateWorktreeCoreDeps {
   github: ForgeService;
   workspaceGitService?: Pick<
     WorkspaceGitService,
-    "resolveRepoRoot" | "resolveDefaultBranch" | "resolveForge"
+    "resolveRepoRoot" | "resolveDefaultBranch" | "resolveForge" | "getCheckout"
   >;
   resolveDefaultBranch?: (repoRoot: string) => Promise<string>;
 }
@@ -115,12 +117,21 @@ async function createWorktreeCoreWithPriority(
     }
   }
 
+  const runSetup = input.runSetup ?? true;
+  // Setup runs from the project's folder inside the worktree, matching daemon worktree setup.
+  const project = runSetup
+    ? await planWorkspaceCwdForWorktree(input.cwd, requireWorkspaceGitService(deps))
+    : undefined;
+
   return {
     worktree: await createWorktree({
       cwd: repoRoot,
       worktreeSlug: normalizedSlug,
       source: intent,
-      runSetup: input.runSetup ?? true,
+      runSetup,
+      ...(project
+        ? { project: { sourceCwd: project.inputCwd, relativeCwd: project.relativeWorkspaceCwd } }
+        : {}),
       paseoHome: input.paseoHome,
       worktreesRoot: input.worktreesRoot,
     }),
@@ -168,6 +179,29 @@ export async function resolveWorktreeRepoRoot(
   }
 
   return workspaceGitService.resolveRepoRoot(input.cwd);
+}
+
+function requireWorkspaceGitService(
+  deps: CreateWorktreeCoreDeps,
+): NonNullable<CreateWorktreeCoreDeps["workspaceGitService"]> {
+  if (!deps.workspaceGitService) {
+    throw new Error("Create worktree requires WorkspaceGitService");
+  }
+  return deps.workspaceGitService;
+}
+
+export async function planWorkspaceCwdForWorktree(
+  inputCwd: string,
+  workspaceGitService: Pick<WorkspaceGitService, "getCheckout">,
+): Promise<{ inputCwd: string; relativeWorkspaceCwd: string }> {
+  const normalizedInputCwd = resolve(inputCwd);
+  const sourceCheckout = await workspaceGitService.getCheckout(normalizedInputCwd);
+  const sourceWorktreePath = sourceCheckout.worktreeRoot ?? normalizedInputCwd;
+  const relativeWorkspaceCwd = getRealpathAwareRelativePath(sourceWorktreePath, normalizedInputCwd);
+  if (relativeWorkspaceCwd === null) {
+    throw new Error(`Workspace cwd is outside its source worktree: ${normalizedInputCwd}`);
+  }
+  return { inputCwd: normalizedInputCwd, relativeWorkspaceCwd };
 }
 
 function validateWorktreeSlug(slug: string): string {

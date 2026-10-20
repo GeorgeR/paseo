@@ -80,7 +80,7 @@ Add `--forge <name>` when Paseo cannot infer the forge from the source checkout.
 
 ## paseo.json
 
-Drop a `paseo.json` in your repo root. Paseo reads it from the committed version of the base branch you picked, so uncommitted changes in other branches don't apply.
+Drop a `paseo.json` in your project folder: the repo root, or the subfolder you added as a project when the project is nested inside a repository. Paseo reads it from the committed version of the base branch you picked, so uncommitted changes in other branches don't apply. A nested project never uses the repository root's `paseo.json`.
 
 ```json
 {
@@ -110,7 +110,7 @@ Drop a `paseo.json` in your repo root. Paseo reads it from the committed version
 
 Both fields accept a multiline shell script or an array of commands; commands run sequentially either way.
 
-Commands run with the worktree as `cwd`. Use `$PASEO_SOURCE_CHECKOUT_PATH` to reach files in the original checkout (untracked config, local caches, etc).
+Commands run with the project folder inside the worktree as `cwd`. Use `$PASEO_SOURCE_CHECKOUT_PATH` to reach files in the original checkout (untracked config, local caches, etc).
 
 ## Scripts and services
 

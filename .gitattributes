@@ -1,0 +1,21 @@
+# Store text with LF in the index and check it out with LF on every OS.
+# Tests compare fixture bytes and Biome expects LF, so CRLF checkouts on
+# Windows cause false test failures and format churn.
+* text=auto eol=lf
+
+# cmd.exe needs CRLF for reliable label/goto parsing.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets: never touch line endings or show text diffs.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.mp4 binary
+*.webm binary
+*.wav binary
+*.onnx binary

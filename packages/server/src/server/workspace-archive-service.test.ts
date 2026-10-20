@@ -398,6 +398,82 @@ describe("archiveByScope", () => {
     expect(existsSync(worktree.worktreePath)).toBe(true);
   });
 
+  test("workspace scope keeps a worktree for an active subdirectory workspace without worktree fields", async () => {
+    const { tempDir, repoDir } = createGitRepo();
+    const paseoHome = path.join(tempDir, ".paseo");
+    const worktree = await createPaseoOwnedWorktree(repoDir, paseoHome, "subdirectory-no-fields");
+    const ownerWorkspaceId = "ws-subdirectory-owner";
+    const siblingWorkspaceId = "ws-subdirectory-unlinked";
+    const siblingDirectory = path.join(worktree.worktreePath, "packages", "app");
+    mkdirSync(siblingDirectory, { recursive: true });
+
+    const result = await archiveByScope(
+      createArchiveDeps({
+        paseoHome,
+        activeWorkspaces: [
+          {
+            workspaceId: ownerWorkspaceId,
+            cwd: worktree.worktreePath,
+            kind: "worktree",
+            worktreeRoot: worktree.worktreePath,
+            isPaseoOwnedWorktree: true,
+            mainRepoRoot: repoDir,
+          },
+          // Observed while Git failed: no worktreeRoot / isPaseoOwnedWorktree.
+          { workspaceId: siblingWorkspaceId, cwd: siblingDirectory, kind: "directory" },
+        ],
+      }),
+      {
+        scope: { kind: "workspace", workspaceId: ownerWorkspaceId },
+        requestId: "req-subdirectory-no-fields",
+      },
+    );
+
+    assertArchiveResult(result, {
+      archivedWorkspaceIds: [ownerWorkspaceId],
+      removedDirectory: false,
+    });
+    expect(existsSync(siblingDirectory)).toBe(true);
+  });
+
+  test("workspace scope removes a worktree when an active workspace only shares its name prefix", async () => {
+    const { tempDir, repoDir } = createGitRepo();
+    const paseoHome = path.join(tempDir, ".paseo");
+    const worktree = await createPaseoOwnedWorktree(repoDir, paseoHome, "prefix-owner");
+    const ownerWorkspaceId = "ws-prefix-owner";
+    const prefixWorkspaceId = "ws-prefix-sibling";
+    const prefixDirectory = `${worktree.worktreePath}-other`;
+    mkdirSync(prefixDirectory, { recursive: true });
+
+    const result = await archiveByScope(
+      createArchiveDeps({
+        paseoHome,
+        activeWorkspaces: [
+          {
+            workspaceId: ownerWorkspaceId,
+            cwd: worktree.worktreePath,
+            kind: "worktree",
+            worktreeRoot: worktree.worktreePath,
+            isPaseoOwnedWorktree: true,
+            mainRepoRoot: repoDir,
+          },
+          { workspaceId: prefixWorkspaceId, cwd: prefixDirectory, kind: "directory" },
+        ],
+      }),
+      {
+        scope: { kind: "workspace", workspaceId: ownerWorkspaceId },
+        requestId: "req-prefix-owner",
+      },
+    );
+
+    assertArchiveResult(result, {
+      archivedWorkspaceIds: [ownerWorkspaceId],
+      removedDirectory: true,
+    });
+    expect(existsSync(worktree.worktreePath)).toBe(false);
+    expect(existsSync(prefixDirectory)).toBe(true);
+  });
+
   test("workspace scope runs teardown from the exact nested workspace before deleting its worktree", async () => {
     const { tempDir, repoDir } = createGitRepo();
     const nestedRelative = path.join("packages", "app");

@@ -18,7 +18,7 @@ import type {
   WorkspaceArchiveContext,
   WorkspaceRegistry,
 } from "./workspace-registry.js";
-import { createRealpathAwarePathMatcher } from "../utils/path.js";
+import { createRealpathAwarePathMatcher, isRealpathInsideRoot } from "../utils/path.js";
 import { runWithGitCommandPriority } from "../utils/run-git-command.js";
 import { WorkspaceAutomationBlockedError } from "./workspace-automation-gate.js";
 
@@ -515,7 +515,9 @@ export async function archiveWorkspaceContents(
 
 // True when, after archiving
 // the in-scope records, no active workspace still points at targetDir. Derived
-// from records each call — no stored counter.
+// from records each call — no stored counter. A workspace whose cwd is at or
+// under targetDir also counts: its record may lack worktree fields (observed
+// while Git failed), but deleting the directory would still remove its files.
 async function isDirectoryUnreferenced(
   activeWorkspaces: ActiveWorkspaceRef[],
   targetDir: string,
@@ -526,6 +528,7 @@ async function isDirectoryUnreferenced(
   const matchesTarget = createRealpathAwarePathMatcher(target);
   for (const workspace of activeWorkspaces) {
     if (archivedWorkspaceIds.has(workspace.workspaceId)) continue;
+    if (isRealpathInsideRoot(target, workspace.cwd)) return false;
     const backingDirectory = await resolveWorkspaceBackingDirectory(workspace, dependencies);
     if (matchesTarget(backingDirectory.path)) return false;
   }

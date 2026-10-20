@@ -20,6 +20,7 @@ import {
   WorkspaceReconciliationService,
 } from "./workspace-reconciliation-service.js";
 import { deriveProjectKey } from "./project-key.js";
+import { WorkspaceGitServiceImpl } from "./workspace-git-service.js";
 
 function canonicalLocalProjectKey(rootPath: string): string {
   return deriveProjectKey({
@@ -1238,6 +1239,114 @@ describe("WorkspaceReconciliationService", () => {
     expect(result.changesApplied).toEqual([]);
     expect(projects.get(project.projectId)).toEqual(project);
     expect(workspaces.get(workspace.workspaceId)).toEqual(workspace);
+  });
+
+  test("keeps worktree placement when a real Git probe fails with a non-repository error", async () => {
+    const repoRoot = createTempGitRepo("reconcile-git-probe-failure-");
+    tempDirs.push(repoRoot);
+    // A config Git cannot parse fails `rev-parse` with "bad config line", the
+    // same shape as dubious ownership or a missing git: a failure, not absence.
+    writeFileSync(path.join(repoRoot, ".git", "config"), "garbage [[[\n", { flag: "a" });
+    const { projects, workspaces, projectRegistry, workspaceRegistry } = createTestRegistries();
+    const project = createPersistedProjectRecord({
+      projectId: "p1",
+      rootPath: repoRoot,
+      kind: "git",
+      displayName: "repo",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    const workspace = createPersistedWorkspaceRecord({
+      workspaceId: "w1",
+      projectId: project.projectId,
+      cwd: repoRoot,
+      kind: "worktree",
+      displayName: "feature",
+      branch: "feature",
+      worktreeRoot: repoRoot,
+      isPaseoOwnedWorktree: true,
+      mainRepoRoot: "/tmp/main-repo",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+    projects.set(project.projectId, project);
+    workspaces.set(workspace.workspaceId, workspace);
+    const workspaceGitService = new WorkspaceGitServiceImpl({
+      logger: createTestLogger(),
+      paseoHome: path.join(repoRoot, ".paseo-home"),
+    });
+    const service = new WorkspaceReconciliationService({
+      projectRegistry,
+      workspaceRegistry,
+      logger: createTestLogger(),
+      workspaceGitService,
+    });
+
+    try {
+      const result = await service.reconcileGitMetadata();
+
+      expect(result.changesApplied).toEqual([]);
+      expect(projects.get(project.projectId)).toEqual(project);
+      expect(workspaces.get(workspace.workspaceId)).toEqual(workspace);
+    } finally {
+      await workspaceGitService.dispose();
+    }
+  });
+
+  test("rewrites a stale worktree record to a directory when a real probe finds no repository", async () => {
+    const directory = realpathSync(mkdtempSync(path.join(tmpdir(), "reconcile-not-a-repo-")));
+    tempDirs.push(directory);
+    const { projects, workspaces, projectRegistry, workspaceRegistry } = createTestRegistries();
+    projects.set(
+      "p1",
+      createPersistedProjectRecord({
+        projectId: "p1",
+        rootPath: directory,
+        kind: "git",
+        displayName: "directory",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }),
+    );
+    workspaces.set(
+      "w1",
+      createPersistedWorkspaceRecord({
+        workspaceId: "w1",
+        projectId: "p1",
+        cwd: directory,
+        kind: "worktree",
+        displayName: "feature",
+        worktreeRoot: directory,
+        isPaseoOwnedWorktree: true,
+        mainRepoRoot: "/tmp/main-repo",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }),
+    );
+    const workspaceGitService = new WorkspaceGitServiceImpl({
+      logger: createTestLogger(),
+      paseoHome: path.join(directory, ".paseo-home"),
+    });
+    const service = new WorkspaceReconciliationService({
+      projectRegistry,
+      workspaceRegistry,
+      logger: createTestLogger(),
+      workspaceGitService,
+    });
+
+    try {
+      await service.reconcileGitMetadata();
+
+      expect(projects.get("p1")?.kind).toBe("non_git");
+      expect(workspaces.get("w1")).toMatchObject({
+        kind: "directory",
+        worktreeRoot: null,
+        isPaseoOwnedWorktree: false,
+        mainRepoRoot: null,
+      });
+    } finally {
+      await workspaceGitService.dispose();
+    }
   });
 
   test("archives non-directory workspaces without blocking sibling reconciliation", async () => {

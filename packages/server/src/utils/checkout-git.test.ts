@@ -388,6 +388,15 @@ describe("checkout git utilities", () => {
     ]);
   });
 
+  it("rejects instead of reporting non-git when Git fails inside a repository", async () => {
+    const brokenRepo = join(tempDir, "broken-config-repo");
+    mkdirSync(brokenRepo, { recursive: true });
+    execFileSync("git", ["init", "-b", "main"], { cwd: brokenRepo });
+    writeFileSync(join(brokenRepo, ".git", "config"), "garbage [[[\n", { flag: "a" });
+
+    await expect(getCheckoutStatus(brokenRepo)).rejects.toThrow(/bad config line/);
+  });
+
   it("returns null for getCurrentBranch in a repo with no commits", async () => {
     const emptyRepo = join(tempDir, "empty-repo");
     mkdirSync(emptyRepo, { recursive: true });

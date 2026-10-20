@@ -2721,6 +2721,8 @@ const ParsedDiffFileSchema = z.object({
   oldPath: z.string().optional(),
   isNew: z.boolean(),
   isDeleted: z.boolean(),
+  // Unresolved merge conflict in the working tree. Older daemons omit it.
+  conflicted: z.boolean().optional(),
   additions: z.number(),
   deletions: z.number(),
   hunks: z.array(DiffHunkSchema),

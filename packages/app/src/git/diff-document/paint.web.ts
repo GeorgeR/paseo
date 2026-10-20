@@ -237,7 +237,8 @@ function paintChangeIcon(
   context.translate(x, y);
   context.scale(DIFF_FILE_HEADER_ICON_SIZE / 24, DIFF_FILE_HEADER_ICON_SIZE / 24);
   if (change === "added") context.strokeStyle = palette.statusSuccess;
-  else if (change === "deleted") context.strokeStyle = palette.statusDanger;
+  else if (change === "deleted" || change === "conflicted")
+    context.strokeStyle = palette.statusDanger;
   else context.strokeStyle = palette.statusWarning;
   context.lineWidth = 2;
   context.lineCap = "round";
@@ -252,6 +253,11 @@ function paintChangeIcon(
   } else if (change === "deleted") {
     context.moveTo(8, 12);
     context.lineTo(16, 12);
+  } else if (change === "conflicted") {
+    context.moveTo(12, 8);
+    context.lineTo(12, 12);
+    context.moveTo(12, 16);
+    context.lineTo(12.01, 16);
   } else {
     context.moveTo(12, 12);
     context.lineTo(12.01, 12);

@@ -496,6 +496,8 @@ export const fr: TranslationResources = {
       confirmRevert: {
         title: "Abandonner les modifications ?",
         message: "Les modifications de « {{name}} » seront définitivement abandonnées.",
+        conflictWarning:
+          "Ce fichier a un conflit de fusion : les modifications entrantes de la fusion seront aussi perdues.",
         confirm: "Abandonner",
         cancel: "Annuler",
         failed: "Impossible d’abandonner les modifications",
@@ -857,6 +859,7 @@ export const fr: TranslationResources = {
           disabled: "Fusion automatique désactivée",
         },
         unavailable: {
+          commitConflicts: "Résolvez les conflits avant de faire un commit.",
           viewPrNoForge:
             "Impossible de voir la {{noun}} pour l’instant : {{brand}} n’est pas connecté",
           pullNoRemote:
@@ -978,6 +981,7 @@ export const fr: TranslationResources = {
         newFile: "Nouveau",
         deletedFile: "Supprimé",
         modifiedFile: "Modifié",
+        conflictedFile: "En conflit",
         commits: {
           title: "Commits",
           countLabel: "{{count}} commits de l’espace de travail",

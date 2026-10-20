@@ -166,6 +166,34 @@ const SourceSchema = z.object({
     ).toBe(true);
   });
 
+  it("accepts checkout diff files with and without the conflicted flag", () => {
+    const file = {
+      path: "src/a.ts",
+      isNew: false,
+      isDeleted: false,
+      additions: 1,
+      deletions: 1,
+      hunks: [],
+      status: "ok",
+    };
+    const envelope = (files: unknown[]) => ({
+      type: "session",
+      message: {
+        type: "checkout.diff.get.response",
+        payload: { cwd: "/repo", files, error: null, requestId: "diff-get" },
+      },
+    });
+
+    expect(GeneratedWSOutboundMessageSchema.safeParse(envelope([file])).success).toBe(true);
+    expect(
+      GeneratedWSOutboundMessageSchema.safeParse(envelope([{ ...file, conflicted: true }])).success,
+    ).toBe(true);
+    expect(
+      GeneratedWSOutboundMessageSchema.safeParse(envelope([{ ...file, conflicted: "yes" }]))
+        .success,
+    ).toBe(false);
+  });
+
   it("accepts a compact provider snapshot envelope", () => {
     const envelope = {
       type: "session",

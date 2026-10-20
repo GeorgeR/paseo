@@ -47,6 +47,9 @@ const fileChanges = {
   isDeleted: (value) => {
     value.isDeleted = true;
   },
+  conflicted: (value) => {
+    value.conflicted = true;
+  },
   additions: (value) => {
     value.additions = 2;
   },

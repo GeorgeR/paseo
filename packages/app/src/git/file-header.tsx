@@ -24,6 +24,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useFileHeaderInteraction } from "@/git/file-header-interaction";
 import {
   diffFileChangeKind,
+  type DiffFileChangeKind,
   directorySuffix,
   fileNameForPath,
   formatDiffCount,
@@ -130,7 +131,7 @@ function fileHeaderNameStyle(showsBodyState: boolean, isHovered: boolean) {
   ];
 }
 
-function fileChange(file: ParsedDiffFile): "added" | "deleted" | "modified" {
+function fileChange(file: ParsedDiffFile): DiffFileChangeKind {
   return diffFileChangeKind(file);
 }
 

@@ -491,6 +491,7 @@ export const zhCN: TranslationResources = {
       confirmRevert: {
         title: "放弃更改？",
         message: "对“{{name}}”的更改将被永久放弃。",
+        conflictWarning: "此文件存在合并冲突，合并带入的更改也会丢失。",
         confirm: "放弃",
         cancel: "取消",
         failed: "放弃更改失败",
@@ -846,6 +847,7 @@ export const zhCN: TranslationResources = {
           disabled: "Auto-merge 已禁用",
         },
         unavailable: {
+          commitConflicts: "请先解决冲突再提交。",
           viewPrNoForge: "当前无法查看 {{noun}}，因为 {{brand}} 未连接",
           pullNoRemote: "此处无法 pull，因为此分支尚未连接到 remote",
           pullDirty: "有本地变更时无法 pull，请先 commit 或 stash",
@@ -946,6 +948,7 @@ export const zhCN: TranslationResources = {
         newFile: "新增",
         deletedFile: "已删除",
         modifiedFile: "已修改",
+        conflictedFile: "冲突",
         commits: {
           title: "提交",
           countLabel: "{{count}} 个工作区提交",

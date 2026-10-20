@@ -497,6 +497,8 @@ export const es: TranslationResources = {
       confirmRevert: {
         title: "¿Descartar cambios?",
         message: 'Los cambios en "{{name}}" se descartarán permanentemente.',
+        conflictWarning:
+          "Este archivo tiene un conflicto de fusión, así que también se perderán los cambios entrantes de la fusión.",
         confirm: "Descartar",
         cancel: "Cancelar",
         failed: "No se pudieron descartar los cambios",
@@ -858,6 +860,7 @@ export const es: TranslationResources = {
           disabled: "Fusión automática deshabilitada",
         },
         unavailable: {
+          commitConflicts: "Resuelve los conflictos antes de hacer commit.",
           viewPrNoForge:
             "Ver {{noun}} no está disponible en este momento porque {{brand}} no está conectado",
           pullNoRemote:
@@ -987,6 +990,7 @@ export const es: TranslationResources = {
         newFile: "Nuevo",
         deletedFile: "Eliminado",
         modifiedFile: "Modificado",
+        conflictedFile: "En conflicto",
         commits: {
           title: "Commits",
           countLabel: "{{count}} commits del espacio de trabajo",

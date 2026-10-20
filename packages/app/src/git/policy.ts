@@ -69,6 +69,8 @@ export interface BuildGitActionsInput {
   isPaseoOwnedWorktree: boolean;
   isOnBaseBranch: boolean;
   hasUncommittedChanges: boolean;
+  /** True when any uncommitted changed file has an unresolved merge conflict. */
+  hasConflictedFiles: boolean;
   baseRefAvailable: boolean;
   baseRefLabel: string;
   aheadCount: number;
@@ -202,6 +204,9 @@ export function buildGitActions(input: BuildGitActionsInput): GitActions {
     successLabel: i18n.t("workspace.git.actions.commit.success"),
     disabled: input.runtime.commit.disabled,
     status: input.runtime.commit.status,
+    unavailableMessage: input.runtime.commit.disabled
+      ? undefined
+      : getCommitUnavailableMessage(input),
     icon: input.runtime.commit.icon,
     startsGroup: false,
     handler: input.runtime.commit.handler,
@@ -603,6 +608,13 @@ function hasEnabledPrAutoMerge(input: BuildGitActionsInput): boolean {
     input.pullRequestUrl !== null &&
     input.mergeCapability?.autoMergeEnabled === true
   );
+}
+
+function getCommitUnavailableMessage(input: BuildGitActionsInput): string | undefined {
+  if (input.hasConflictedFiles) {
+    return i18n.t("workspace.git.actions.unavailable.commitConflicts");
+  }
+  return undefined;
 }
 
 function getPullUnavailableMessage(input: BuildGitActionsInput): string | undefined {

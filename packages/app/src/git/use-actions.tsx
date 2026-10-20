@@ -9,6 +9,7 @@ import { getForgePresentation, type Forge } from "@/git/forge";
 import { ForgeBrandIcon, getForgeBrandColorMapping } from "@/git/forge-icon";
 import { type CheckoutGitActionStatus, useCheckoutGitActionsStore } from "@/git/actions-store";
 import { type CheckoutStatusPayload, useCheckoutStatusQuery } from "@/git/use-status-query";
+import { useCheckoutDiffQuery } from "@/git/use-diff-query";
 import { type CheckoutPrStatusPayload, useCheckoutPrStatusQuery } from "@/git/use-pr-status-query";
 import {
   buildGitActions,
@@ -312,6 +313,19 @@ function useWorkspaceScreenArchiveController({
   };
 }
 
+function useHasConflictedFiles({
+  serverId,
+  cwd,
+  enabled,
+}: {
+  serverId: string;
+  cwd: string;
+  enabled: boolean;
+}): boolean {
+  const { files } = useCheckoutDiffQuery({ serverId, cwd, mode: "uncommitted", enabled });
+  return enabled && files.some((file) => file.conflicted === true);
+}
+
 export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): UseGitActionsResult {
   const { t } = useTranslation();
   const toast = useToast();
@@ -326,6 +340,11 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
   const baseRef = gitStatus?.baseRef ?? undefined;
 
   const hasUncommittedChanges = Boolean(gitStatus?.isDirty);
+  const hasConflictedFiles = useHasConflictedFiles({
+    serverId,
+    cwd,
+    enabled: isGit && hasUncommittedChanges,
+  });
 
   const {
     status: prStatus,
@@ -696,6 +715,7 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
       isPaseoOwnedWorktree,
       isOnBaseBranch,
       hasUncommittedChanges,
+      hasConflictedFiles,
       baseRefAvailable: Boolean(baseRef),
       baseRefLabel,
       aheadCount,
@@ -816,6 +836,7 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
     forge,
     githubAutoMergeActionsEnabled,
     hasUncommittedChanges,
+    hasConflictedFiles,
     aheadOfOrigin,
     behindOfOrigin,
     shipDefault,
@@ -1083,6 +1104,7 @@ function translateGitActionUnavailableMessage(
       "workspace.git.actions.unavailable.mergePrQueue",
     "Auto-merge is enabled, but this account can't disable it":
       "workspace.git.actions.unavailable.autoMergeCannotDisable",
+    "Resolve conflicts before committing.": "workspace.git.actions.unavailable.commitConflicts",
   };
   if (
     message.startsWith("Update isn't available because this branch is already up to date with ")

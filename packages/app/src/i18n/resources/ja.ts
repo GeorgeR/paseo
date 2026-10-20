@@ -497,6 +497,8 @@ export const ja: TranslationResources = {
       confirmRevert: {
         title: "変更を破棄しますか？",
         message: "「{{name}}」への変更は完全に破棄されます。",
+        conflictWarning:
+          "このファイルにはマージの競合があるため、マージで取り込まれる変更も失われます。",
         confirm: "破棄",
         cancel: "キャンセル",
         failed: "変更の破棄に失敗しました",
@@ -854,6 +856,7 @@ export const ja: TranslationResources = {
           disabled: "自動マージが無効になりました",
         },
         unavailable: {
+          commitConflicts: "コミットする前に競合を解決してください。",
           viewPrNoForge: "{{brand}}が接続されていないため、{{noun}}の表示は現在利用できません",
           pullNoRemote:
             "このブランチはまだリモートに接続されていないため、プルはここでは利用できません",
@@ -967,6 +970,7 @@ export const ja: TranslationResources = {
         newFile: "新規",
         deletedFile: "削除済み",
         modifiedFile: "変更済み",
+        conflictedFile: "競合",
         commits: {
           title: "コミット",
           countLabel: "ワークスペースのコミット数: {{count}}",

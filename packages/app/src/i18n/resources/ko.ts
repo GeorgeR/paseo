@@ -492,6 +492,7 @@ export const ko: TranslationResources = {
       confirmRevert: {
         title: "변경 사항을 버릴까요?",
         message: '"{{name}}"의 변경 사항이 영구적으로 삭제됩니다.',
+        conflictWarning: "이 파일에 병합 충돌이 있으므로 병합으로 들어오는 변경 사항도 사라집니다.",
         confirm: "버리기",
         cancel: "취소",
         failed: "변경 사항을 버리지 못했습니다",
@@ -850,6 +851,7 @@ export const ko: TranslationResources = {
           disabled: "자동 병합 해제됨",
         },
         unavailable: {
+          commitConflicts: "커밋하기 전에 충돌을 해결하세요.",
           viewPrNoForge: "{{brand}}가 연결되지 않아 지금은 {{noun}} 보기를 사용할 수 없습니다.",
           pullNoRemote: "이 브랜치가 아직 원격에 연결되어 있지 않아 여기서 풀을 사용할 수 없습니다",
           pullDirty: "로컬 변경 사항이 있어 풀을 사용할 수 없습니다. 먼저 커밋하거나 스태시하세요",
@@ -961,6 +963,7 @@ export const ko: TranslationResources = {
         newFile: "신규",
         deletedFile: "삭제됨",
         modifiedFile: "수정됨",
+        conflictedFile: "충돌",
         commits: {
           title: "커밋",
           countLabel: "워크스페이스 커밋 {{count}}개",

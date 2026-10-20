@@ -488,6 +488,8 @@ export const en = {
       confirmRevert: {
         title: "Discard changes?",
         message: 'Changes to "{{name}}" will be permanently discarded.',
+        conflictWarning:
+          "This file has a merge conflict, so the merge's incoming changes will also be lost.",
         confirm: "Discard",
         cancel: "Cancel",
         failed: "Failed to discard changes",
@@ -845,6 +847,7 @@ export const en = {
           disabled: "Auto-merge disabled",
         },
         unavailable: {
+          commitConflicts: "Resolve conflicts before committing.",
           viewPrNoForge:
             "View {{noun}} isn't available right now because {{brand}} isn't connected",
           pullNoRemote:
@@ -962,6 +965,7 @@ export const en = {
         newFile: "New",
         deletedFile: "Deleted",
         modifiedFile: "Modified",
+        conflictedFile: "Conflicted",
         commits: {
           title: "Commits",
           countLabel: "{{count}} workspace commits",

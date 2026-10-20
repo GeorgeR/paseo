@@ -37,10 +37,15 @@ export function directorySuffix(path: string): string {
   return path.includes("/") ? ` ${path.slice(0, path.lastIndexOf("/"))}` : "";
 }
 
+export type DiffFileChangeKind = "added" | "deleted" | "modified" | "conflicted";
+
 export function diffFileChangeKind(file: {
   isNew: boolean;
   isDeleted: boolean;
-}): "added" | "deleted" | "modified" {
+  conflicted?: boolean;
+}): DiffFileChangeKind {
+  // An unresolved conflict outranks the add/delete kind: it blocks the commit.
+  if (file.conflicted) return "conflicted";
   if (file.isNew) return "added";
   if (file.isDeleted) return "deleted";
   return "modified";

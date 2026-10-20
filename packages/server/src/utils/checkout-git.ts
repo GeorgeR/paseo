@@ -198,6 +198,7 @@ interface CheckoutFileChange {
   isNew: boolean;
   isDeleted: boolean;
   isUntracked?: boolean;
+  conflicted?: boolean;
 }
 
 interface CheckoutDiffRefs {
@@ -575,6 +576,17 @@ async function listCheckoutFileChanges(
     }
   }
 
+  // `git diff --name-status HEAD` reports unmerged paths as modified, so read
+  // the unmerged index entries separately. Conflicts only exist in the working tree.
+  if (!refs.targetRef) {
+    const unmergedPaths = await listUnmergedPaths(cwd);
+    for (const change of changes) {
+      if (unmergedPaths.has(change.path)) {
+        change.conflicted = true;
+      }
+    }
+  }
+
   // Deduplicate by path (prefer tracked status over untracked marker if both appear).
   const byPath = new Map<string, CheckoutFileChange>();
   for (const change of changes) {
@@ -588,6 +600,14 @@ async function listCheckoutFileChanges(
     }
   }
   return Array.from(byPath.values());
+}
+
+async function listUnmergedPaths(cwd: string): Promise<Set<string>> {
+  const { stdout } = await runGitCommand(["diff", "--name-only", "--diff-filter=U", "-z"], {
+    cwd,
+    envOverlay: READ_ONLY_GIT_ENV,
+  });
+  return new Set(stdout.split("\0").filter(Boolean));
 }
 
 async function readGitFileContentAtRef(
@@ -850,6 +870,16 @@ export class MergeFromBaseConflictError extends Error {
     this.baseRef = options.baseRef;
     this.currentBranch = options.currentBranch;
     this.conflictFiles = options.conflictFiles;
+  }
+}
+
+export class UnresolvedMergeConflictsError extends Error {
+  readonly conflictFiles: string[];
+
+  constructor(conflictFiles: string[]) {
+    super(`Resolve merge conflicts before committing: ${conflictFiles.join(", ")}`);
+    this.name = "UnresolvedMergeConflictsError";
+    this.conflictFiles = conflictFiles;
   }
 }
 
@@ -2252,6 +2282,7 @@ function buildPlaceholderParsedDiffFile(
     ...(change.oldPath ? { oldPath: change.oldPath } : {}),
     isNew: change.isNew,
     isDeleted: change.isDeleted,
+    ...(change.conflicted ? { conflicted: true } : {}),
     additions: options.stat?.additions ?? 0,
     deletions: options.stat?.deletions ?? 0,
     hunks: [],
@@ -3109,6 +3140,7 @@ async function buildHighlightedTrackedDiffFile(input: {
     ...(change.oldPath ? { oldPath: change.oldPath } : {}),
     isNew: change.isNew,
     isDeleted: change.isDeleted,
+    ...(change.conflicted ? { conflicted: true } : {}),
     status: "ok",
   };
 }
@@ -3211,6 +3243,7 @@ async function appendStructuredTrackedDiffs(
         ...(change.oldPath ? { oldPath: change.oldPath } : {}),
         isNew: change.isNew,
         isDeleted: change.isDeleted,
+        ...(change.conflicted ? { conflicted: true } : {}),
         additions: stat?.additions ?? 0,
         deletions: stat?.deletions ?? 0,
         hunks: [],
@@ -3542,6 +3575,10 @@ export async function commitChanges(
   options: { message: string; addAll?: boolean },
 ): Promise<void> {
   await requireGitRepo(cwd);
+  const unmergedPaths = await listUnmergedPaths(cwd);
+  if (unmergedPaths.size > 0) {
+    throw new UnresolvedMergeConflictsError(Array.from(unmergedPaths).sort());
+  }
   if (options.addAll ?? true) {
     await runGitCommand(["add", "-A"], { cwd, timeout: 120_000 });
   }

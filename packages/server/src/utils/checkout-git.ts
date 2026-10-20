@@ -2665,8 +2665,20 @@ export async function getCommitFileDiff({
   sha: string;
   path: string;
 }): Promise<ParsedDiffFile | null> {
+  // A pathspec limited to the new path hides the rename source, so look it up first.
+  const oldPath = await findCommitRenameSource({ cwd, sha, path });
+  const paths = oldPath ? [oldPath, path] : [path];
   const { stdout } = await runGitCommand(
-    ["show", sha, "--format=", "--diff-merges=first-parent", ...GIT_PATCH_FORMAT_ARGS, "--", path],
+    [
+      "show",
+      sha,
+      "--format=",
+      "--diff-merges=first-parent",
+      "-M",
+      ...GIT_PATCH_FORMAT_ARGS,
+      "--",
+      ...paths.map((candidate) => `:(literal)${candidate}`),
+    ],
     {
       cwd,
       envOverlay: READ_ONLY_GIT_ENV,
@@ -2677,13 +2689,17 @@ export async function getCommitFileDiff({
     return null;
   }
 
+  // A side missing at this revision (add, delete, root commit) falls back to
+  // tokens reconstructed from the hunks, never to today's working-tree file.
   const parsedFiles = await parseAndHighlightDiff(stdout, cwd, {
-    getOldFileContent: (file) => readGitFileContentAtRef(cwd, `${sha}^`, file.path),
+    getOldFileContent: (file) =>
+      readGitFileContentAtRef(cwd, `${sha}^`, file.path === path && oldPath ? oldPath : file.path),
     getNewFileContent: (file) => readGitFileContentAtRef(cwd, sha, file.path),
+    workingTreeFallback: false,
   });
 
-  // `--` scopes the diff to a single pathspec, so there is at most one real
-  // entry. Pick by path to drop any stray header-only section the parser emits.
+  // The pathspec covers at most this file and its rename source, which git pairs
+  // into one entry. Pick by path to drop any stray header-only section the parser emits.
   const file = parsedFiles.find((candidate) => candidate.path === path) ?? null;
   if (!file) {
     return null;
@@ -2695,7 +2711,39 @@ export async function getCommitFileDiff({
     return null;
   }
 
-  return file;
+  return { ...file, ...(oldPath ? { oldPath } : {}) };
+}
+
+async function findCommitRenameSource({
+  cwd,
+  sha,
+  path,
+}: {
+  cwd: string;
+  sha: string;
+  path: string;
+}): Promise<string | null> {
+  const { stdout } = await runGitCommand(
+    ["show", sha, "--format=", "--diff-merges=first-parent", "-M", "--name-status", "-z"],
+    {
+      cwd,
+      envOverlay: READ_ONLY_GIT_ENV,
+    },
+  );
+  const fields = stdout.split("\0");
+  let index = 0;
+  while (index < fields.length) {
+    const status = fields[index] ?? "";
+    if (status.startsWith("R") || status.startsWith("C")) {
+      if (fields[index + 2] === path) {
+        return fields[index + 1] ?? null;
+      }
+      index += 3;
+    } else {
+      index += 2;
+    }
+  }
+  return null;
 }
 
 export interface CheckoutShortstat {

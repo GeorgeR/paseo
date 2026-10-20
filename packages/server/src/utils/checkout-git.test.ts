@@ -3692,6 +3692,39 @@ const x = 1;
     );
   });
 
+  it("refuses an option-like base ref and keeps uncommitted changes", async () => {
+    execFileSync("git", ["checkout", "-b", "feature"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "file.txt"), "uncommitted\n");
+
+    await expect(mergeToBase(repoDir, { baseRef: "-f" })).rejects.toThrow(/-f/);
+
+    expect(readTextFile(join(repoDir, "file.txt"))).toBe("uncommitted\n");
+    expect(
+      execFileSync("git", ["symbolic-ref", "--short", "HEAD"], { cwd: repoDir }).toString().trim(),
+    ).toBe("feature");
+  });
+
+  it("reports a failed checkout back to the original branch", async () => {
+    execFileSync("git", ["checkout", "-b", "feature"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "feature.txt"), "feature\n");
+    execFileSync("git", ["add", "feature.txt"], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "feature commit"], {
+      cwd: repoDir,
+    });
+    // The merge itself succeeds; the hook then holds the index lock so the restore checkout fails.
+    const hookPath = join(repoDir, ".git", "hooks", "post-merge");
+    writeFileSync(hookPath, '#!/bin/sh\ntouch "$(git rev-parse --git-dir)/index.lock"\n', {
+      mode: 0o755,
+    });
+
+    await expect(mergeToBase(repoDir, { baseRef: "main" })).rejects.toThrow(
+      /could not check out feature/,
+    );
+    expect(
+      execFileSync("git", ["symbolic-ref", "--short", "HEAD"], { cwd: repoDir }).toString().trim(),
+    ).toBe("main");
+  });
+
   it("honors commit signing configuration for squash merges", async () => {
     execFileSync("git", ["checkout", "-b", "feature"], { cwd: repoDir });
     writeFileSync(join(repoDir, "feature.txt"), "feature\n");

@@ -37,7 +37,7 @@ import {
   type WorktreeSetupCommandResult,
   WorktreeSetupError,
 } from "../utils/worktree.js";
-import { toCheckoutError } from "./checkout-git-utils.js";
+import { isSafeGitRef, toCheckoutError } from "./checkout-git-utils.js";
 import type {
   CreatePaseoWorktreeInput,
   CreatePaseoWorktreeResult,
@@ -54,8 +54,6 @@ import {
   formatWorkspaceAutomationBlockedMessage,
   WorkspaceAutomationBlockedError,
 } from "./workspace-automation-gate.js";
-
-const SAFE_GIT_REF_PATTERN = /^[A-Za-z0-9._/-]+$/;
 
 export interface NormalizedGitOptions {
   baseBranch?: string;
@@ -426,7 +424,7 @@ function normalizeGitOptions(
 }
 
 export function assertSafeGitRef(ref: string, label: string): void {
-  if (!SAFE_GIT_REF_PATTERN.test(ref) || ref.includes("..") || ref.includes("@{")) {
+  if (!isSafeGitRef(ref)) {
     throw new Error(`Invalid ${label}: ${ref}`);
   }
 }

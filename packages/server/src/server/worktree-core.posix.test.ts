@@ -86,6 +86,15 @@ function createCoreDeps(options?: {
     github: options?.github ?? createGitHubServiceStub(),
     workspaceGitService: {
       resolveRepoRoot: async (cwd: string) => cwd,
+      getCheckout: async (cwd: string) => ({
+        cwd,
+        isGit: true,
+        currentBranch: null,
+        remoteUrl: null,
+        worktreeRoot: cwd,
+        isPaseoOwnedWorktree: false,
+        mainRepoRoot: null,
+      }),
       resolveForge: async () =>
         options?.forge
           ? {

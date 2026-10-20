@@ -9,7 +9,6 @@ import {
   attemptFirstAgentBranchAutoName,
   type AttemptFirstAgentBranchAutoNameResult,
 } from "./paseo-worktree-service.js";
-import { createNoopWorkspaceGitService } from "./test-utils/workspace-git-service-stub.js";
 import { generateBranchNameFromFirstAgentContext } from "./worktree-branch-name-generator.js";
 import {
   writePaseoWorktreeFirstAgentBranchAutoNameMetadata,
@@ -229,7 +228,6 @@ describe("generateBranchNameFromFirstAgentContext", () => {
 
   test.each([
     ["paseo.json missing", undefined],
-    ["paseo.json exists but invalid JSON", "{ nope"],
     ["paseo.json valid but missing metadataGeneration", {}],
     [
       "metadataGeneration exists but missing branchName",
@@ -291,14 +289,13 @@ describe("generateBranchNameFromFirstAgentContext", () => {
   });
 
   test("keeps the branch slug validator fallback when instructions are present", async () => {
-    const repoRoot = createTempDir("paseo-branch-config-");
     const worktreeRoot = createTempDir("paseo-branch-worktree-");
     mkdirSync(path.join(worktreeRoot, ".git"));
     writePaseoWorktreeMetadata(worktreeRoot, { baseRefName: "main" });
     writePaseoWorktreeFirstAgentBranchAutoNameMetadata(worktreeRoot, {
       placeholderBranchName: "dazzling-yak",
     });
-    writeConfig(repoRoot, {
+    writeConfig(worktreeRoot, {
       metadataGeneration: {
         branchName: {
           instructions: "Use the prefix mb/.",
@@ -321,9 +318,6 @@ describe("generateBranchNameFromFirstAgentContext", () => {
         generateBranchNameFromFirstAgentContext({
           agentManager: {} as AgentManager,
           cwd,
-          workspaceGitService: createNoopWorkspaceGitService({
-            resolveRepoRoot: async () => repoRoot,
-          }),
           firstAgentContext,
           logger: createLogger(),
           deps: { generateStructuredAgentResponseWithFallback: structured.generateStructured },
@@ -335,16 +329,66 @@ describe("generateBranchNameFromFirstAgentContext", () => {
     expect(result).toEqual({ attempted: true, renamed: false, branchName: null });
     expect(renameCurrentBranch).not.toHaveBeenCalled();
   });
+
+  test("reads branch instructions from the nested project's paseo.json, not the repository root", async () => {
+    const repoRoot = createTempDir("paseo-branch-nested-");
+    const projectRoot = path.join(repoRoot, "sub");
+    mkdirSync(projectRoot);
+    writeConfig(repoRoot, {
+      metadataGeneration: { branchName: { instructions: "Repo root prefix." } },
+    });
+    writeConfig(projectRoot, {
+      metadataGeneration: { branchName: { instructions: "Use the prefix sub/." } },
+    });
+
+    const { prompt } = await generateBranchPrompt(projectRoot);
+
+    expect(prompt).toContain("Branch style:\nUse the prefix sub/.");
+    expect(prompt).not.toContain("Repo root prefix.");
+  });
+
+  test("a malformed paseo.json skips generation and logs the parse error", async () => {
+    const projectRoot = createTempDir("paseo-branch-malformed-");
+    writeFileSync(path.join(projectRoot, "paseo.json"), "{ nope");
+    const structured = createStructuredGenerator({
+      title: "Fix login flow",
+      branch: "fix-login-flow",
+    });
+    const logger = createLogger();
+
+    const result = await generateBranchNameFromFirstAgentContext({
+      agentManager: {} as AgentManager,
+      cwd: projectRoot,
+      firstAgentContext: { prompt: "Fix the login flow" },
+      logger,
+      deps: { generateStructuredAgentResponseWithFallback: structured.generateStructured },
+    });
+
+    expect(result).toBeNull();
+    expect(structured.calls).toEqual([]);
+    expect(logger.error).toHaveBeenCalledWith(
+      {
+        err: expect.objectContaining({
+          message: expect.stringMatching(/Failed to parse paseo\.json/),
+        }),
+        attempts: undefined,
+      },
+      "Branch name generation failed",
+    );
+  });
 });
 
 async function generateBranchPromptWithConfig(config: unknown): Promise<{ prompt: string }> {
-  const repoRoot = createTempDir("paseo-branch-config-");
+  const projectRoot = createTempDir("paseo-branch-config-");
   if (typeof config === "string") {
-    writeFileSync(path.join(repoRoot, "paseo.json"), config);
+    writeFileSync(path.join(projectRoot, "paseo.json"), config);
   } else if (config !== undefined) {
-    writeConfig(repoRoot, config);
+    writeConfig(projectRoot, config);
   }
+  return generateBranchPrompt(projectRoot);
+}
 
+async function generateBranchPrompt(cwd: string): Promise<{ prompt: string }> {
   const structured = createStructuredGenerator({
     title: "Fix login flow",
     branch: "fix-login-flow",
@@ -352,10 +396,7 @@ async function generateBranchPromptWithConfig(config: unknown): Promise<{ prompt
 
   await generateBranchNameFromFirstAgentContext({
     agentManager: {} as AgentManager,
-    cwd: path.join(repoRoot, "nested"),
-    workspaceGitService: createNoopWorkspaceGitService({
-      resolveRepoRoot: async () => repoRoot,
-    }),
+    cwd,
     firstAgentContext: { prompt: "Fix the login flow" },
     logger: createLogger(),
     deps: { generateStructuredAgentResponseWithFallback: structured.generateStructured },

@@ -1,14 +1,7 @@
-import { readPaseoConfigJson } from "./paseo-config-file.js";
-import {
-  PaseoConfigSchema,
-  type PaseoMetadataGeneration,
-} from "@getpaseo/protocol/paseo-config-schema";
+import type { PaseoMetadataGeneration } from "@getpaseo/protocol/paseo-config-schema";
+import { paseoConfigParseError, readPaseoConfig } from "./worktree.js";
 
 export type MetadataConfigKey = "title" | "branchName" | "commitMessage" | "pullRequest";
-
-export interface RepoRootResolver {
-  resolveRepoRoot: (cwd: string) => Promise<string>;
-}
 
 // A style section carries the default guidance for one artifact. The project
 // owner replaces it wholesale via paseo.json metadataGeneration.<configKey>.instructions
@@ -22,16 +15,19 @@ export interface MetadataStyleSection {
 }
 
 export interface BuildMetadataPromptOptions {
+  // The workspace cwd: the project root, or the same project directory inside a
+  // worktree. paseo.json is read from here, the root the project settings editor
+  // writes to and scripts/setup read from, not from the Git top level, which
+  // differs for a project nested inside a repository.
   cwd: string;
   contract: string;
   styles: MetadataStyleSection[];
   after: string;
   trailing?: string;
-  workspaceGitService?: RepoRootResolver;
 }
 
 export async function buildMetadataPrompt(options: BuildMetadataPromptOptions): Promise<string> {
-  const overrides = await readProjectMetadataOverrides(options);
+  const overrides = readProjectMetadataOverrides(options.cwd);
   const styleBlocks = options.styles.map((section) =>
     renderStyleSection(section, overrides?.[section.configKey]?.instructions),
   );
@@ -44,19 +40,14 @@ function renderStyleSection(section: MetadataStyleSection, override: string | un
   return section.label ? `${section.label}:\n${body}` : body;
 }
 
-async function readProjectMetadataOverrides(
-  options: Pick<BuildMetadataPromptOptions, "cwd" | "workspaceGitService">,
-): Promise<PaseoMetadataGeneration | undefined> {
-  if (!options.workspaceGitService) {
-    return undefined;
+// A malformed paseo.json throws instead of silently falling back to the default
+// styles, so the user learns their instructions are being ignored.
+function readProjectMetadataOverrides(cwd: string): PaseoMetadataGeneration | undefined {
+  const result = readPaseoConfig(cwd);
+  if (!result.ok) {
+    throw paseoConfigParseError(result);
   }
-  try {
-    const repoRoot = await options.workspaceGitService.resolveRepoRoot(options.cwd);
-    const json = readPaseoConfigJson(repoRoot);
-    return PaseoConfigSchema.parse(json).metadataGeneration;
-  } catch {
-    return undefined;
-  }
+  return result.config?.metadataGeneration;
 }
 
 function isNonEmptyString(value: unknown): value is string {

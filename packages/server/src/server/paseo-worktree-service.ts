@@ -1,12 +1,11 @@
 import { stat } from "node:fs/promises";
-import { resolve } from "node:path";
 
 import type { WorkspaceGitService } from "./workspace-git-service.js";
-import { getRealpathAwareRelativePath } from "../utils/path.js";
 import type { PersistedWorkspaceRecord } from "./workspace-registry.js";
 import type { WorkspaceProvisioningService } from "./session/workspace-provisioning/workspace-provisioning-service.js";
 import {
   createWorktreeCore,
+  planWorkspaceCwdForWorktree,
   type CreateWorktreeCoreDeps,
   type CreateWorktreeCoreInput,
 } from "./worktree-core.js";
@@ -150,20 +149,6 @@ async function isDirectory(targetPath: string): Promise<boolean> {
   } catch {
     return false;
   }
-}
-
-async function planWorkspaceCwdForWorktree(
-  inputCwd: string,
-  workspaceGitService: Pick<WorkspaceGitService, "getCheckout">,
-): Promise<{ inputCwd: string; relativeWorkspaceCwd: string }> {
-  const normalizedInputCwd = resolve(inputCwd);
-  const sourceCheckout = await workspaceGitService.getCheckout(normalizedInputCwd);
-  const sourceWorktreePath = sourceCheckout.worktreeRoot ?? normalizedInputCwd;
-  const relativeWorkspaceCwd = getRealpathAwareRelativePath(sourceWorktreePath, normalizedInputCwd);
-  if (relativeWorkspaceCwd === null) {
-    throw new Error(`Workspace cwd is outside its source worktree: ${normalizedInputCwd}`);
-  }
-  return { inputCwd: normalizedInputCwd, relativeWorkspaceCwd };
 }
 
 export async function attemptFirstAgentBranchAutoName(options: {

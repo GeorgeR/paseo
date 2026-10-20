@@ -4,7 +4,6 @@ import type { AgentManager } from "./agent/agent-manager.js";
 import type { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
 import { WorkspaceAutoName } from "./workspace-auto-name.js";
 import { createPersistedWorkspaceRecord, type WorkspaceRegistry } from "./workspace-registry.js";
-import type { WorkspaceGitService } from "./workspace-git-service.js";
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
   let resolve!: () => void;
@@ -38,7 +37,6 @@ test("auto-name preserves workspace archival that lands during its metadata writ
   const autoName = new WorkspaceAutoName({
     agentManager: {} as AgentManager,
     workspaceRegistry,
-    workspaceGitService: {} as WorkspaceGitService,
     providerSnapshotManager: {} as ProviderSnapshotManager,
     readDaemonConfig: () => ({}),
     gitMutation: { notifyGitMutation: async () => {} },

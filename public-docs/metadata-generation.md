@@ -68,7 +68,7 @@ The Settings screen replaces only the first entry and preserves the rest of a cu
 
 ## Per-project instructions
 
-You can steer the wording of each kind of metadata per repository with a `paseo.json` file at your repo root. Paseo reads it from the committed version of the base branch, the same way it reads worktree config.
+You can steer the wording of each kind of metadata per project with a `paseo.json` file at your project root. For a project inside a larger repository, that is the project's folder, not the repository root. Paseo reads the copy in the workspace, the same way it reads scripts and worktree config. If the file is not valid JSON, commit message and pull request generation fail with the parse error instead of using the defaults.
 
 ```json
 {

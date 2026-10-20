@@ -51,7 +51,7 @@ export interface StructuredTextGenerationRequest<T> {
   agentTitle: string;
 }
 
-type GitMetadataDiffSource = Pick<WorkspaceGitService, "getCheckoutDiff" | "resolveRepoRoot">;
+type GitMetadataDiffSource = Pick<WorkspaceGitService, "getCheckoutDiff">;
 type CheckoutDiffOptions = Parameters<GitMetadataDiffSource["getCheckoutDiff"]>[1];
 type CheckoutDiff = Awaited<ReturnType<GitMetadataDiffSource["getCheckoutDiff"]>>;
 
@@ -99,7 +99,6 @@ export function createGitMetadataGenerator(deps: {
     const patch = truncatePatch(diff.diff, input.maxPatchChars);
     return buildMetadataPrompt({
       cwd: input.cwd,
-      workspaceGitService,
       contract: input.contract,
       styles: [{ configKey: input.styleConfigKey, default: input.styleDefault }],
       after: [

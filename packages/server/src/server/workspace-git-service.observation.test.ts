@@ -1712,7 +1712,7 @@ describe("WorkspaceGitService checkout observation", () => {
 
   test("watcher runtime error is closed, counted, and switches to scoped polling", async () => {
     const watcher = createWatcherHarness();
-    let ignoredDirectories = "node_modules/\n";
+    let ignoredDirectories = "node_modules/\0";
     const runGitCommand = vi.fn(async (args: string[]) => ({
       stdout: args[0] === "rev-parse" ? `${REPO_CWD}\n` : ignoredDirectories,
       stderr: "",
@@ -1748,7 +1748,7 @@ describe("WorkspaceGitService checkout observation", () => {
     expect(getCheckoutSnapshotFacts).toHaveBeenCalledTimes(1);
     expect(service.getMetrics().workspaceRefreshQueuedCount).toBe(0);
 
-    ignoredDirectories = "node_modules/\nbuild/\n";
+    ignoredDirectories = "node_modules/\0build/\0";
     await vi.advanceTimersByTimeAsync(29_000);
     await vi.waitFor(() => {
       expect(getWatcherRecordsForDirectory(watcher, REPO_CWD)).toHaveLength(2);
@@ -2046,7 +2046,7 @@ describe("WorkspaceGitService checkout observation", () => {
 
   test("adding ignored directories updates filtering without replacing the watcher", async () => {
     const watcher = createWatcherHarness();
-    let ignoredDirectories = "node_modules/\n";
+    let ignoredDirectories = "node_modules/\0";
     const runGitCommand = vi.fn(async (args: string[]) => {
       return {
         stdout: args[0] === "rev-parse" ? `${REPO_CWD}\n` : ignoredDirectories,
@@ -2071,7 +2071,7 @@ describe("WorkspaceGitService checkout observation", () => {
     const checkoutWatcher = watcher.records.find((record) => record.directory === REPO_CWD);
     expect(checkoutWatcher?.ignore).toContain(path.join(REPO_CWD, "node_modules"));
 
-    ignoredDirectories = "node_modules/\nbuild/\n";
+    ignoredDirectories = "node_modules/\0build/\0";
     checkoutWatcher?.callback(null, [{ path: path.join(REPO_CWD, ".gitignore"), type: "update" }]);
     await vi.waitFor(() => {
       expect(runGitCommand).toHaveBeenCalledTimes(3);
@@ -2180,7 +2180,7 @@ describe("WorkspaceGitService checkout observation", () => {
     expect(checkoutWatcher?.ignore).not.toContain(path.join(REPO_CWD, "deps"));
 
     // Dependencies get installed. No .gitignore is touched.
-    ignoredDirectories = "deps/\n";
+    ignoredDirectories = "deps/\0";
     checkoutWatcher?.callback(null, [
       { path: path.join(REPO_CWD, "deps", "package-a", "index.js"), type: "create" },
     ]);
@@ -2243,7 +2243,7 @@ describe("WorkspaceGitService checkout observation", () => {
 
     // Dependencies get installed. No .gitignore is touched, so this only
     // schedules a refresh via directory discovery — the one wired to fail.
-    ignoredDirectories = "deps/\n";
+    ignoredDirectories = "deps/\0";
     checkoutWatcher?.callback(null, [
       { path: path.join(REPO_CWD, "deps", "package-a", "index.js"), type: "create" },
     ]);
@@ -2300,7 +2300,7 @@ describe("WorkspaceGitService checkout observation", () => {
     ).length;
 
     // One burst in a new directory: one debounced refresh, not one per event.
-    ignoredDirectories = "deps/\n";
+    ignoredDirectories = "deps/\0";
     for (let index = 0; index < 500; index += 1) {
       checkoutWatcher?.callback(null, [
         { path: path.join(REPO_CWD, "deps", `module-${index}.js`), type: "create" },
@@ -2490,7 +2490,7 @@ describe("WorkspaceGitService checkout observation", () => {
     // no need to fork the harness.
     const failDirectories = new Set<string>();
     const watcher = createWatcherHarness({ failDirectories });
-    let ignoredDirectories = "node_modules/\n";
+    let ignoredDirectories = "node_modules/\0";
     const runGitCommand = vi.fn(async (args: string[]) => ({
       stdout: args[0] === "rev-parse" ? `${REPO_CWD}\n` : ignoredDirectories,
       stderr: "",
@@ -2517,7 +2517,7 @@ describe("WorkspaceGitService checkout observation", () => {
     // Force the live subscription to fail and enter recovery. A rejected updateIgnore is the
     // most direct trigger: it nulls target.subscription and schedules recovery.
     checkoutWatcher?.updateIgnore.mockRejectedValueOnce(new Error("update failed"));
-    ignoredDirectories = "node_modules/\nbuild/\n";
+    ignoredDirectories = "node_modules/\0build/\0";
     checkoutWatcher?.callback(null, [{ path: path.join(REPO_CWD, ".gitignore"), type: "update" }]);
 
     // Recovery backs off at WATCH_RECOVERY_BASE_DELAY_MS * 2**(attempt-1) with base 30_000ms,
@@ -2538,7 +2538,7 @@ describe("WorkspaceGitService checkout observation", () => {
 
   test("removing an ignored directory updates the watcher without replacement", async () => {
     const watcher = createWatcherHarness();
-    let ignoredDirectories = "node_modules/\nbuild/\n";
+    let ignoredDirectories = "node_modules/\0build/\0";
     const runGitCommand = vi.fn(async (args: string[]) => {
       return {
         stdout: args[0] === "rev-parse" ? `${REPO_CWD}\n` : ignoredDirectories,
@@ -2562,7 +2562,7 @@ describe("WorkspaceGitService checkout observation", () => {
     });
     const originalWatcher = watcher.records.find((record) => record.directory === REPO_CWD);
 
-    ignoredDirectories = "node_modules/\n";
+    ignoredDirectories = "node_modules/\0";
     originalWatcher?.callback(null, [{ path: path.join(REPO_CWD, ".gitignore"), type: "update" }]);
     await vi.waitFor(() => {
       expect(originalWatcher?.updateIgnore).toHaveBeenCalledTimes(1);
@@ -2587,7 +2587,7 @@ describe("WorkspaceGitService checkout observation", () => {
 
   test("repository exclude changes update working-tree filtering", async () => {
     const watcher = createWatcherHarness();
-    let ignoredDirectories = "node_modules/\n";
+    let ignoredDirectories = "node_modules/\0";
     const runGitCommand = vi.fn(async (args: string[]) => ({
       stdout: args[0] === "rev-parse" ? `${REPO_CWD}\n` : ignoredDirectories,
       stderr: "",
@@ -2603,7 +2603,7 @@ describe("WorkspaceGitService checkout observation", () => {
     });
     const checkoutWatcher = getWatcherRecordsForDirectory(watcher, REPO_CWD)[0];
     const repositoryWatcher = getWatcherRecordsForDirectory(watcher, GIT_DIR)[0];
-    ignoredDirectories = "node_modules/\nbuild/\n";
+    ignoredDirectories = "node_modules/\0build/\0";
 
     repositoryWatcher?.callback(null, [
       { path: path.join(GIT_DIR, "info", "exclude"), type: "update" },
@@ -2640,7 +2640,7 @@ describe("WorkspaceGitService checkout observation", () => {
       lsFilesCallCount += 1;
       if (lsFilesCallCount === 2) return blockedRefresh.promise;
       return {
-        stdout: lsFilesCallCount === 1 ? "node_modules/\n" : "node_modules/\nbuild/\n",
+        stdout: lsFilesCallCount === 1 ? "node_modules/\0" : "node_modules/\0build/\0",
         stderr: "",
         truncated: false,
         exitCode: 0,
@@ -2658,7 +2658,7 @@ describe("WorkspaceGitService checkout observation", () => {
     await vi.waitFor(() => expect(lsFilesCallCount).toBe(2));
     checkoutWatcher?.callback(null, [{ path: path.join(REPO_CWD, ".gitignore"), type: "update" }]);
     blockedRefresh.resolve({
-      stdout: "node_modules/\n",
+      stdout: "node_modules/\0",
       stderr: "",
       truncated: false,
       exitCode: 0,
@@ -2675,7 +2675,7 @@ describe("WorkspaceGitService checkout observation", () => {
   test("ignore watcher update failure enters polling with a distinct reason", async () => {
     const watcher = createWatcherHarness();
     const logger = createLogger();
-    let ignoredDirectories = "node_modules/\nbuild/\n";
+    let ignoredDirectories = "node_modules/\0build/\0";
     const runGitCommand = vi.fn(async (args: string[]) => ({
       stdout: args[0] === "rev-parse" ? `${REPO_CWD}\n` : ignoredDirectories,
       stderr: "",
@@ -2701,7 +2701,7 @@ describe("WorkspaceGitService checkout observation", () => {
     });
     const checkoutWatcher = getWatcherRecordsForDirectory(watcher, REPO_CWD)[0];
     checkoutWatcher?.updateIgnore.mockRejectedValueOnce(new Error("update failed"));
-    ignoredDirectories = "node_modules/\n";
+    ignoredDirectories = "node_modules/\0";
 
     checkoutWatcher?.callback(null, [{ path: path.join(REPO_CWD, ".gitignore"), type: "update" }]);
     await vi.waitFor(() => {

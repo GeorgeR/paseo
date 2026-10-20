@@ -2984,10 +2984,13 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     const ignored = new Set<string>();
     try {
       const result = await this.deps.runGitCommand(
-        ["ls-files", "-o", "-i", "--directory", "--exclude-standard"],
+        // `-z` emits names verbatim. Without it Git C-quotes names with control
+        // characters, `"`, or `\` (e.g. `"del\177/"`), which then fail the
+        // trailing-slash check and drop out of the ignore set.
+        ["ls-files", "-o", "-i", "--directory", "--exclude-standard", "-z"],
         { cwd: rootPath, env: READ_ONLY_GIT_ENV },
       );
-      for (const raw of result.stdout.split("\n")) {
+      for (const raw of result.stdout.split("\0")) {
         if (!raw.endsWith("/")) {
           continue;
         }

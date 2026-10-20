@@ -798,7 +798,15 @@ async function loadGitIgnoredPaths(root: string): Promise<Set<string>> {
             .map((relativePath) => path.resolve(root, relativePath.replace(/\/$/, ""))),
         ),
     )
-    .catch(() => new Set<string>());
+    .catch(() => {
+      // A failed load is not "nothing is ignored". Keep serving the last good set and put
+      // its (expired) entry back so the next search retries instead of caching the failure.
+      if (gitIgnoredPathsCache.get(root)?.paths === paths) {
+        if (cached) gitIgnoredPathsCache.set(root, cached);
+        else gitIgnoredPathsCache.delete(root);
+      }
+      return cached?.paths ?? new Set<string>();
+    });
 
   gitIgnoredPathsCache.set(root, {
     expiresAt: now + GIT_IGNORED_PATHS_CACHE_TTL_MS,

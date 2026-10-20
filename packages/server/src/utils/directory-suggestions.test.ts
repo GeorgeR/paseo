@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import {
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -11,7 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isPlatform } from "../test-utils/platform.js";
 import { startPathContainmentMetrics, stopPathContainmentMetrics } from "./path.js";
 import { startGitCommandMetrics, stopGitCommandMetrics } from "./run-git-command.js";
@@ -169,6 +170,54 @@ describe("searchDirectoryEntries", () => {
     expect(gitMetrics.commands.filter((command) => command.args.includes("ls-files"))).toHaveLength(
       1,
     );
+  });
+
+  it("keeps the last good Git-ignored set when a refresh fails, and retries on the next search", async () => {
+    initGitRepo(searchRoot, "data/\n");
+    mkdirSync(path.join(searchRoot, "data", "matching-ignored-directory"), { recursive: true });
+    mkdirSync(path.join(searchRoot, "output", "matching-output-directory"), { recursive: true });
+    mkdirSync(path.join(searchRoot, "visible", "matching-visible-directory"), { recursive: true });
+    const headPath = path.join(searchRoot, ".git", "HEAD");
+    const head = readFileSync(headPath, "utf8");
+    const search = () =>
+      searchDirectoryEntries({
+        root: searchRoot,
+        query: "matching",
+        pathFormat: "relative",
+        includeFiles: false,
+        includeDirectories: true,
+        respectGitIgnore: true,
+      });
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const beforeFailure = await search();
+
+      // Expire the cached set, then make the next `git ls-files` fail.
+      vi.setSystemTime(Date.now() + 60_000);
+      writeFileSync(headPath, "not a ref\n");
+      const duringFailure = await search();
+
+      // A failed load must not be cached: once Git works again, the next search reloads.
+      writeFileSync(headPath, head);
+      writeFileSync(path.join(searchRoot, ".gitignore"), "data/\noutput/\n");
+      const afterRecovery = await search();
+
+      const visibleOnly = [{ path: "visible/matching-visible-directory", kind: "directory" }];
+      expect({ beforeFailure, duringFailure, afterRecovery }).toEqual({
+        beforeFailure: [
+          { path: "output/matching-output-directory", kind: "directory" },
+          { path: "visible/matching-visible-directory", kind: "directory" },
+        ],
+        duringFailure: [
+          { path: "output/matching-output-directory", kind: "directory" },
+          { path: "visible/matching-visible-directory", kind: "directory" },
+        ],
+        afterRecovery: visibleOnly,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.skipIf(isWindows)(

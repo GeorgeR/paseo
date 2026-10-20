@@ -600,3 +600,89 @@ test("keeps the worktree on disk when a sibling workspace still references it", 
   expect(remaining.has(siblingWorkspaceId)).toBe(true);
   expect(existsSync(worktreeDir)).toBe(true);
 }, 60000);
+
+async function runCliExpectingFailure(args: string[], cwd: string): Promise<string> {
+  try {
+    await runCli(args, cwd);
+  } catch (error) {
+    const { stdout = "", stderr = "" } = error as { stdout?: string; stderr?: string };
+    return `${stdout}${stderr}`;
+  }
+  throw new Error(`Expected paseo ${args.join(" ")} to fail`);
+}
+
+async function createWorktreeWorkspace(
+  repoDir: string,
+  worktreeSlug: string,
+): Promise<{ id: string; directory: string }> {
+  const result = await ctx.client.createWorkspace({
+    source: { kind: "worktree", cwd: repoDir, worktreeSlug, baseBranch: "main" },
+  });
+  if (!result.workspace?.workspaceDirectory) {
+    throw new Error(result.error ?? "Failed to create worktree workspace");
+  }
+  return { id: result.workspace.id, directory: result.workspace.workspaceDirectory };
+}
+
+test("workspace archive refuses a worktree with uncommitted changes until --force", async () => {
+  const repoDir = createGitRepo();
+  const workspace = await createWorktreeWorkspace(repoDir, "dirty-archive");
+  const editPath = path.join(workspace.directory, "unsaved.txt");
+  writeFileSync(editPath, "work in progress\n");
+
+  const refusal = await runCliExpectingFailure(
+    ["workspace", "archive", workspace.id, "--json"],
+    repoDir,
+  );
+
+  expect(refusal).toContain("1 uncommitted change");
+  expect(refusal).toContain("--force");
+  expect(existsSync(editPath)).toBe(true);
+  expect((await activeWorkspaceIds()).has(workspace.id)).toBe(true);
+
+  await runCli(["workspace", "archive", workspace.id, "--force", "--json"], repoDir);
+
+  expect((await activeWorkspaceIds()).has(workspace.id)).toBe(false);
+  expect(existsSync(workspace.directory)).toBe(false);
+}, 60000);
+
+test("workspace archive refuses a worktree with unpublished commits", async () => {
+  const repoDir = createGitRepo();
+  const remoteDir = path.join(path.dirname(repoDir), "remote.git");
+  execFileSync("git", ["init", "--bare", remoteDir], { stdio: "pipe" });
+  execFileSync("git", ["remote", "add", "origin", remoteDir], { cwd: repoDir, stdio: "pipe" });
+  execFileSync("git", ["push", "-u", "origin", "main"], { cwd: repoDir, stdio: "pipe" });
+  const workspace = await createWorktreeWorkspace(repoDir, "unpublished-archive");
+  const branch = execFileSync("git", ["branch", "--show-current"], { cwd: workspace.directory })
+    .toString()
+    .trim();
+  execFileSync("git", ["push", "-u", "origin", branch], {
+    cwd: workspace.directory,
+    stdio: "pipe",
+  });
+  execFileSync(
+    "git",
+    ["-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "unpublished"],
+    { cwd: workspace.directory, stdio: "pipe" },
+  );
+
+  const refusal = await runCliExpectingFailure(
+    ["workspace", "archive", workspace.id, "--json"],
+    repoDir,
+  );
+
+  expect(refusal).toContain(`1 unpublished commit on ${branch}`);
+  expect(existsSync(workspace.directory)).toBe(true);
+  expect((await activeWorkspaceIds()).has(workspace.id)).toBe(true);
+}, 60000);
+
+test("archive requests without the unique-work opt-in keep archiving dirty worktrees", async () => {
+  const repoDir = createGitRepo();
+  const workspace = await createWorktreeWorkspace(repoDir, "app-confirmed-archive");
+  writeFileSync(path.join(workspace.directory, "unsaved.txt"), "confirmed in the app\n");
+
+  const archive = await ctx.client.archiveWorkspace(workspace.id);
+
+  expect(archive.error).toBeNull();
+  expect(existsSync(workspace.directory)).toBe(false);
+}, 60000);

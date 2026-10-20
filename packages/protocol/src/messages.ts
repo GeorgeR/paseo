@@ -2631,6 +2631,10 @@ export const ArchiveWorkspaceRequestSchema = z.object({
   type: z.literal("archive_workspace_request"),
   workspaceId: z.string(),
   requestId: z.string(),
+  // Refuse when archiving would delete a Paseo worktree with uncommitted changes or
+  // unpublished commits. Omitted by the app, which confirms with the user instead.
+  // Gated on server_info.features.workspaceArchiveRefuseUniqueWork.
+  refuseUniqueWork: z.boolean().optional(),
 });
 
 // Create a new workspace record. Unlike open_project, this never deduplicates by
@@ -3594,6 +3598,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceLabels: z.boolean().optional(),
         // COMPAT(workspaceSetupRun): added in v0.8.0, remove gate after 2027-09-02.
         workspaceSetupRun: z.boolean().optional(),
+        // COMPAT(workspaceArchiveRefuseUniqueWork): added in v0.11.3, remove gate after 2027-04-20.
+        workspaceArchiveRefuseUniqueWork: z.boolean().optional(),
         // COMPAT(workspaceTerminals): added in v0.8.0, remove gate after 2027-09-05.
         workspaceTerminals: z.boolean().optional(),
         // COMPAT(checkoutForgeSetAutoMerge): added in v0.2.0-beta.1. Remove the

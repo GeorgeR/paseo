@@ -29,7 +29,7 @@ Choose `baseBranch` explicitly: `origin/main` selects the remote-tracking branch
 
 **`list_workspaces`** — list active workspaces, excluding background workspaces unless `includeBackground: true`.
 
-**`archive_workspace`** — `{ workspaceId }`. Archives the workspace, its agents, and its terminals. Local directories remain; Paseo removes an owned worktree only after its final active workspace reference is archived.
+**`archive_workspace`** — `{ workspaceId, force? }`. Archives the workspace, its agents, and its terminals. Local directories remain; Paseo removes an owned worktree only after its final active workspace reference is archived. It refuses when that removal would lose uncommitted changes or unpublished commits; pass `force: true` to archive anyway.
 
 **`rename_workspace`** — `{ workspaceId, name }`. Rename workspace.
 

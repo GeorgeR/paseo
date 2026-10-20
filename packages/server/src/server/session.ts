@@ -7464,6 +7464,7 @@ export class Session {
         {
           scope: { kind: "workspace", workspaceId: existing.workspaceId },
           requestId: request.requestId,
+          refuseUniqueWork: request.refuseUniqueWork === true,
         },
       );
 

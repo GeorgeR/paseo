@@ -62,7 +62,11 @@ export function createWorkspaceCommand(): Command {
     workspace
       .command("archive")
       .description("Archive a workspace and everything it owns")
-      .argument("<workspace-id>", "Workspace id"),
+      .argument("<workspace-id>", "Workspace id")
+      .option(
+        "--force",
+        "Archive even if it deletes a worktree with uncommitted changes or unpublished commits",
+      ),
   ).action(withOutput(runArchiveCommand));
 
   return workspace;

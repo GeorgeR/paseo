@@ -2753,12 +2753,14 @@ export class DaemonClient {
   async archiveWorkspace(
     workspaceId: string,
     requestId?: string,
+    options?: { refuseUniqueWork?: boolean },
   ): Promise<ArchiveWorkspacePayload> {
     return this.sendCorrelatedSessionRequest({
       requestId,
       message: {
         type: "archive_workspace_request",
         workspaceId,
+        ...(options?.refuseUniqueWork ? { refuseUniqueWork: true } : {}),
       },
       responseType: "archive_workspace_response",
     });

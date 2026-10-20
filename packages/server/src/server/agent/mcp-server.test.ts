@@ -2909,6 +2909,92 @@ describe("create_agent MCP tool", () => {
     ).rejects.toThrow("Workspace not found: missing-workspace");
   });
 
+  it("refuses to archive a worktree with uncommitted changes unless forced", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const tempDir = realpathSync.native(
+      await mkdtemp(join(tmpdir(), "paseo-mcp-archive-worktree-dirty-")),
+    );
+    const repoDir = join(tempDir, "repo");
+    const paseoHome = join(tempDir, ".paseo");
+
+    try {
+      execFileSync("git", ["init", "-b", "main", repoDir], { stdio: "pipe" });
+      execFileSync("git", ["config", "user.email", "test@example.com"], {
+        cwd: repoDir,
+        stdio: "pipe",
+      });
+      execFileSync("git", ["config", "user.name", "Test"], { cwd: repoDir, stdio: "pipe" });
+      execFileSync("git", ["config", "commit.gpgsign", "false"], {
+        cwd: repoDir,
+        stdio: "pipe",
+      });
+      execFileSync("git", ["commit", "--allow-empty", "-m", "init"], {
+        cwd: repoDir,
+        stdio: "pipe",
+      });
+
+      const workspaceGitService = {
+        getSnapshot: vi.fn(async () => null),
+        listWorktrees: vi.fn(async () => []),
+        resolveRepoRoot: vi.fn(async () => repoDir),
+        invalidateWorktrees: vi.fn(),
+      };
+      const archivedWorkspaceIds: string[] = [];
+      const activeWorkspaces: Array<{
+        workspaceId: string;
+        cwd: string;
+        kind: "worktree" | "local_checkout" | "directory";
+      }> = [];
+      const server = await createAgentMcpServer({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        paseoHome,
+        createPaseoWorktree: createPaseoWorktreeForMcpTest({ paseoHome, broadcasts: [] }),
+        workspaceGitService: workspaceGitService as unknown as Pick<
+          WorkspaceGitService,
+          "getSnapshot" | "listWorktrees" | "resolveRepoRoot"
+        >,
+        findWorkspaceIdForCwd: vi.fn(async () => "ws-mcp-dirty"),
+        listActiveWorkspaces: vi.fn(async () => activeWorkspaces),
+        archiveWorkspaceRecord: createArchiveWorkspaceRecordMutator(
+          activeWorkspaces,
+          archivedWorkspaceIds,
+        ),
+        emitWorkspaceUpdatesForWorkspaceIds: vi.fn(async () => undefined),
+        markWorkspaceArchiving: vi.fn(),
+        clearWorkspaceArchiving: vi.fn(),
+        github: createGitHubServiceStub(),
+        logger,
+      });
+      const created = await registeredTool(server, "create_workspace").handler({
+        isolation: "worktree",
+        path: repoDir,
+        worktreeSlug: "archive-dirty-worktree",
+        baseBranch: "main",
+      });
+      const worktreePath = z.string().parse(created.structuredContent.cwd);
+      activeWorkspaces.push({ workspaceId: "ws-mcp-dirty", cwd: worktreePath, kind: "worktree" });
+      const editPath = join(worktreePath, "unsaved.txt");
+      await writeFile(editPath, "work in progress\n");
+      const archiveTool = registeredTool(server, "archive_workspace");
+
+      await expect(archiveTool.handler({ workspaceId: "ws-mcp-dirty" })).rejects.toThrow(
+        "1 uncommitted change",
+      );
+      expect(archivedWorkspaceIds).toEqual([]);
+      await expect(access(editPath)).resolves.toBeUndefined();
+
+      const forced = await archiveTool.handler({ workspaceId: "ws-mcp-dirty", force: true });
+
+      expect(forced.structuredContent.removedDirectory).toBe(true);
+      expect(archivedWorkspaceIds).toEqual(["ws-mcp-dirty"]);
+      await expect(access(worktreePath)).rejects.toThrow();
+    } finally {
+      await removeTempDir(tempDir);
+    }
+  });
+
   it("keeps an owned worktree while another workspace still references it", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const tempDir = realpathSync.native(

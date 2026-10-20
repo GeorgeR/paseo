@@ -1352,13 +1352,42 @@ function resolveOperationBaseRef(input: {
   return input.storedBaseRef ?? input.requestedBaseRef ?? input.resolvedBaseRef;
 }
 
-async function isWorkingTreeDirty(cwd: string, context?: CheckoutContext): Promise<boolean> {
+async function listWorkingTreeChanges(cwd: string, context?: CheckoutContext): Promise<string[]> {
   const { stdout } = await getRunGitCommand(context)(["status", "--porcelain"], {
     cwd,
     envOverlay: READ_ONLY_GIT_ENV,
     logger: context?.logger,
   });
-  return stdout.trim().length > 0;
+  return stdout.split("\n").filter((line) => line.trim().length > 0);
+}
+
+async function isWorkingTreeDirty(cwd: string, context?: CheckoutContext): Promise<boolean> {
+  return (await listWorkingTreeChanges(cwd, context)).length > 0;
+}
+
+export interface CheckoutUniqueWork {
+  uncommittedChangeCount: number;
+  unpublishedCommitCount: number;
+  currentBranch: string | null;
+}
+
+// Work that exists only in this checkout. Reads the same facts as the status snapshot's
+// isDirty and aheadOfOrigin, which the app archive confirmation and auto-archive use, so a
+// branch without an upstream has no unpublished commits here either.
+export async function getCheckoutUniqueWork(
+  cwd: string,
+  context?: CheckoutContext,
+): Promise<CheckoutUniqueWork | null> {
+  const facts = await getCheckoutSnapshotFacts(cwd, context);
+  if (!facts.isGit) {
+    return null;
+  }
+  const changes = await listWorkingTreeChanges(cwd, context);
+  return {
+    uncommittedChangeCount: changes.length,
+    unpublishedCommitCount: facts.upstreamStatus?.aheadBehind.ahead ?? 0,
+    currentBranch: facts.currentBranch,
+  };
 }
 
 export async function getOriginRemoteUrl(

@@ -139,6 +139,13 @@ describe("checkoutExistingBranch", () => {
     );
   });
 
+  test("rejects an option-like branch ref before touching git", async () => {
+    const { service } = buildService({ resolution: { kind: "local", name: "-f" } });
+    await expect(service.checkoutExistingBranch("/tmp/nope", "-f")).rejects.toThrow(
+      /Invalid branch: -f/,
+    );
+  });
+
   test("rejects when the branch does not resolve", async () => {
     const { service } = buildService({ resolution: { kind: "not-found" } });
     await expect(service.checkoutExistingBranch("/tmp/nope", "missing")).rejects.toThrow(

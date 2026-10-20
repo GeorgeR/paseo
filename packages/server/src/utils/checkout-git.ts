@@ -4,6 +4,7 @@ import { open as openFile, readFile, stat as statFile } from "fs/promises";
 import { setImmediate } from "node:timers/promises";
 import { TTLCache } from "@isaacs/ttlcache";
 import type { CheckoutCommit, CheckoutCommitFile } from "@getpaseo/protocol/messages";
+import { getErrorMessage } from "@getpaseo/protocol/error-utils";
 import { parseGitHubRemoteIdentity, parseGitRemoteLocation } from "@getpaseo/protocol/git-remote";
 import { maxBase64EncryptedPlaintextByteLength } from "@getpaseo/relay";
 import type { Logger } from "pino";
@@ -491,7 +492,7 @@ export async function checkoutResolvedBranch(
         return { source: "local" };
       }
 
-      await runGitCommand(["checkout", resolution.name], { cwd });
+      await runGitCommand(["checkout", "--end-of-options", resolution.name, "--"], { cwd });
       return { source: "local" };
     }
     case "remote-only":
@@ -3719,6 +3720,9 @@ export async function mergeToBase(
     throw new Error("Unable to determine current branch for merge");
   }
   const normalizedBaseRef = resolveMergeTargetBranch(baseRef);
+  if (normalizedBaseRef.startsWith("-")) {
+    throw new Error(`Invalid base branch: ${normalizedBaseRef}`);
+  }
   const currentWorktreeRoot = (await getWorktreeRoot(cwd, context)) ?? cwd;
   if (normalizedBaseRef === currentBranch) {
     return currentWorktreeRoot;
@@ -3729,8 +3733,9 @@ export async function mergeToBase(
   const isSameCheckout = resolve(operationCwd) === resolve(currentWorktreeRoot);
   const originalBranch = await getCurrentBranch(operationCwd);
   const mode = options.mode ?? "merge";
+  let restoreError: unknown = null;
   try {
-    await runGitCommand(["checkout", normalizedBaseRef], {
+    await runGitCommand(["checkout", "--end-of-options", normalizedBaseRef, "--"], {
       cwd: operationCwd,
       timeout: 120_000,
     });
@@ -3759,14 +3764,25 @@ export async function mergeToBase(
   } finally {
     if (isSameCheckout && originalBranch && originalBranch !== normalizedBaseRef) {
       try {
-        await runGitCommand(["checkout", originalBranch], {
+        await runGitCommand(["checkout", "--end-of-options", originalBranch, "--"], {
           cwd: operationCwd,
           timeout: 120_000,
         });
-      } catch {
-        // ignore
+      } catch (error) {
+        restoreError = error;
+        context?.logger?.warn(
+          { err: error, cwd: operationCwd, branch: originalBranch },
+          "Failed to check out the original branch after merge to base",
+        );
       }
     }
+  }
+  // Only reached when the merge succeeded; a merge failure already propagates its own error.
+  if (restoreError) {
+    throw new Error(
+      `Merged ${currentBranch} into ${normalizedBaseRef}, but could not check out ${originalBranch} again: ${getErrorMessage(restoreError)}`,
+      { cause: restoreError },
+    );
   }
   return operationCwd;
 }

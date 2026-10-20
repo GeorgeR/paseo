@@ -161,7 +161,7 @@ test("recursive observation updates tracked state and prunes ignored storms", as
     }
     if (args[0] === "ls-files") {
       return {
-        stdout: `${buildIgnored ? "build/\n" : ""}cache/\n`,
+        stdout: `${buildIgnored ? "build/\0" : ""}cache/\0`,
         stderr: "",
         truncated: false,
         exitCode: 0,
@@ -494,6 +494,55 @@ test("a late Git-ignored tree is pruned while tracked changes still notify consu
     expect(
       afterTrackedEdit.nativeClassificationCount - atIgnoreBoundary.nativeClassificationCount,
     ).toBeLessThanOrEqual(1);
+  } finally {
+    subscription?.unsubscribe();
+    await service.dispose();
+    await observer.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}, 15_000);
+
+test("Git-ignored directories with names Git would quote are in the watcher ignore list", async () => {
+  const tempDir = realpathSync(mkdtempSync(path.join(tmpdir(), "paseo-quoted-ignore-")));
+  const repoDir = path.join(tempDir, "repo");
+  mkdirSync(repoDir);
+  const git = (...args: string[]) =>
+    execFileSync("git", args, { cwd: repoDir, encoding: "utf8" }).trim();
+  git("init", "-q");
+  // Without `-z`, `git ls-files` C-quotes names with control characters (DEL prints as
+  // `"del\177/"`) and, under the default `core.quotePath`, non-ASCII names (`"d\303\251p/"`).
+  // DEL is used because Windows also allows it in file names.
+  const ignoredNames = ["build", "dép", "del\u007fname"];
+  writeFileSync(
+    path.join(repoDir, ".gitignore"),
+    ignoredNames.map((name) => `${name}/\n`).join(""),
+  );
+  const ignoredDirs = ignoredNames.map((name) => path.join(repoDir, name));
+  for (const ignoredDir of ignoredDirs) {
+    mkdirSync(ignoredDir);
+    writeFileSync(path.join(ignoredDir, "artifact.txt"), "artifact\n");
+  }
+
+  const observer = createFileObserver();
+  const subscribedIgnoreLists: string[][] = [];
+  const fileObserver: FileObserver = {
+    subscribe: async (_directory, _callback, options) => {
+      subscribedIgnoreLists.push([...(options?.ignore ?? [])]);
+      return { updateIgnore: async () => {}, unsubscribe: async () => {} };
+    },
+    getDiagnostics: () => observer.getDiagnostics(),
+    close: async () => {},
+  };
+  const service = new WorkspaceGitServiceImpl({
+    logger: pino({ enabled: false }),
+    paseoHome: path.join(tempDir, "home"),
+    fileObserver,
+  });
+  let subscription: Awaited<ReturnType<typeof service.requestWorkingTreeWatch>> | undefined;
+  try {
+    subscription = await service.requestWorkingTreeWatch(repoDir, () => {});
+    expect(subscribedIgnoreLists).toHaveLength(1);
+    expect(subscribedIgnoreLists[0]).toEqual(expect.arrayContaining(ignoredDirs));
   } finally {
     subscription?.unsubscribe();
     await service.dispose();

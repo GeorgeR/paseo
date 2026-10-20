@@ -591,6 +591,14 @@ async function listCheckoutFileChanges(
   return Array.from(byPath.values());
 }
 
+async function listUnmergedPaths(cwd: string): Promise<Set<string>> {
+  const { stdout } = await runGitCommand(["diff", "--name-only", "--diff-filter=U", "-z"], {
+    cwd,
+    envOverlay: READ_ONLY_GIT_ENV,
+  });
+  return new Set(stdout.split("\0").filter(Boolean));
+}
+
 async function readGitFileContentAtRef(
   cwd: string,
   ref: string,
@@ -851,6 +859,16 @@ export class MergeFromBaseConflictError extends Error {
     this.baseRef = options.baseRef;
     this.currentBranch = options.currentBranch;
     this.conflictFiles = options.conflictFiles;
+  }
+}
+
+export class UnresolvedMergeConflictsError extends Error {
+  readonly conflictFiles: string[];
+
+  constructor(conflictFiles: string[]) {
+    super(`Resolve merge conflicts before committing: ${conflictFiles.join(", ")}`);
+    this.name = "UnresolvedMergeConflictsError";
+    this.conflictFiles = conflictFiles;
   }
 }
 
@@ -3561,6 +3579,10 @@ export async function commitChanges(
   options: { message: string; addAll?: boolean },
 ): Promise<void> {
   await requireGitRepo(cwd);
+  const unmergedPaths = await listUnmergedPaths(cwd);
+  if (unmergedPaths.size > 0) {
+    throw new UnresolvedMergeConflictsError(Array.from(unmergedPaths).sort());
+  }
   if (options.addAll ?? true) {
     await runGitCommand(["add", "-A"], { cwd, timeout: 120_000 });
   }

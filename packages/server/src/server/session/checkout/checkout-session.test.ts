@@ -10,7 +10,11 @@ import {
   CheckoutSession,
   type CheckoutSessionHost,
 } from "./checkout-session.js";
-import type { GitMutationService } from "../git-mutation/git-mutation-service.js";
+import {
+  createGitMutationService,
+  type GitMutationService,
+} from "../git-mutation/git-mutation-service.js";
+import { WorkspaceGitServiceImpl } from "../../workspace-git-service.js";
 import { createGitHubService } from "../../../services/github-service.js";
 import { ForgeCliMissingError } from "../../../services/forge-cli-command.js";
 import type { ForgeService } from "../../../services/forge-service.js";
@@ -220,6 +224,19 @@ function createGitSnapshot(
     },
     forge: { featuresEnabled: false, pullRequest: null, error: null },
   };
+}
+
+function findStashListBranches(
+  emitted: SessionOutboundMessage[],
+  requestId: string,
+): Array<string | null> {
+  const response = emitted.find(
+    (msg) => msg.type === "stash_list_response" && msg.payload.requestId === requestId,
+  );
+  if (response?.type !== "stash_list_response") {
+    throw new Error(`No stash_list_response for ${requestId}`);
+  }
+  return response.payload.entries.map((entry) => entry.branch);
 }
 
 describe("CheckoutSession", () => {
@@ -1428,6 +1445,83 @@ describe("CheckoutSession", () => {
           payload: { cwd: "/repo", entries: [], error: null, requestId: "sl1" },
         },
       ]);
+    });
+
+    it("lists the current stash stack right after a stash save or pop", async () => {
+      const tempDir = mkdtempSync(join(tmpdir(), "checkout-session-stash-cache-"));
+      const cwd = realpathSync(tempDir);
+      const logger = pino({ level: "silent" });
+      const workspaceGitService = new WorkspaceGitServiceImpl({
+        logger,
+        paseoHome: "/tmp/paseo-home",
+      });
+      try {
+        execFileSync("git", ["init", "-q", "-b", "main"], { cwd });
+        execFileSync("git", ["config", "user.email", "test@example.com"], { cwd });
+        execFileSync("git", ["config", "user.name", "Test User"], { cwd });
+        writeFileSync(join(cwd, "file.txt"), "original\n");
+        execFileSync("git", ["add", "file.txt"], { cwd });
+        execFileSync("git", ["commit", "-qm", "initial"], { cwd });
+
+        const emitted: SessionOutboundMessage[] = [];
+        const checkout = new CheckoutSession({
+          host: {
+            emit: (msg) => emitted.push(msg),
+            emitWorkspaceUpdateForCwd: async () => {},
+            handleWorkspaceGitBranchSnapshot: () => {},
+            renameCurrentBranch: async (_cwd, branch) => ({
+              previousBranch: null,
+              currentBranch: branch,
+            }),
+          },
+          gitMutation: createGitMutationService({ workspaceGitService, logger }),
+          workspaceGitService,
+          github: createGitHubService(),
+          checkoutDiffManager: createFakeDiffSubscriber({ cwd: "", files: [], error: null })
+            .subscriber,
+          gitMetadataGenerator: {
+            generateCommitMessage: async () => "",
+            generatePullRequestText: async () => ({ title: "", body: "" }),
+          },
+          paseoHome: "/tmp/paseo-home",
+          worktreesRoot: undefined,
+          logger,
+        });
+
+        const listStashBranches = async (requestId: string) => {
+          await checkout.handleStashListRequest({ type: "stash_list_request", cwd, requestId });
+          return findStashListBranches(emitted, requestId);
+        };
+
+        writeFileSync(join(cwd, "file.txt"), "first\n");
+        await checkout.handleStashSaveRequest({
+          type: "stash_save_request",
+          cwd,
+          branch: "first",
+          requestId: "save-1",
+        });
+        expect(await listStashBranches("list-1")).toEqual(["first"]);
+
+        writeFileSync(join(cwd, "file.txt"), "second\n");
+        await checkout.handleStashSaveRequest({
+          type: "stash_save_request",
+          cwd,
+          branch: "second",
+          requestId: "save-2",
+        });
+        expect(await listStashBranches("list-2")).toEqual(["second", "first"]);
+
+        await checkout.handleStashPopRequest({
+          type: "stash_pop_request",
+          cwd,
+          stashIndex: 0,
+          requestId: "pop-1",
+        });
+        expect(await listStashBranches("list-3")).toEqual(["first"]);
+      } finally {
+        await workspaceGitService.dispose();
+        rmSync(tempDir, { recursive: true, force: true });
+      }
     });
   });
 

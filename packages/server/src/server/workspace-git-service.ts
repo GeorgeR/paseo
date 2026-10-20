@@ -242,6 +242,7 @@ export interface WorkspaceGitService {
     options?: WorkspaceGitReadOptions,
   ): Promise<WorkspaceGitWorktreeInfo[]>;
   invalidateWorktrees(): void;
+  invalidateStashes(): void;
   getProjectSlug(cwd: string, options?: WorkspaceGitReadOptions): Promise<string>;
   resolveRepoRoot(cwd: string, options?: WorkspaceGitReadOptions): Promise<string>;
   resolveDefaultBranch(cwdOrRepoRoot: string, options?: WorkspaceGitReadOptions): Promise<string>;
@@ -924,6 +925,14 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     // Checkout paths can cache the same list under different roots, including bare repos.
     // Detach in-flight reads too, so a pre-mutation result cannot refill the cache.
     this.worktreeListCache.clear();
+  }
+
+  invalidateStashes(): void {
+    this.assertNotDisposed();
+    // The stash stack is shared by every worktree of a repo, so a stash made in one
+    // checkout renumbers the entries cached for the others. Clearing also detaches
+    // in-flight reads, so a pre-mutation list cannot refill the cache.
+    this.stashListCache.clear();
   }
 
   async resolveDefaultBranch(

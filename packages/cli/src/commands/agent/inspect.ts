@@ -2,6 +2,7 @@ import type { Command } from "commander";
 import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import { connectToDaemon } from "../../utils/client.js";
+import { shortenHomePath } from "../../utils/paths.js";
 import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../../output/index.js";
 
 export function addInspectOptions(cmd: Command): Command {
@@ -76,15 +77,6 @@ function createInspectSchema(agent: AgentInspect): OutputSchema<InspectRow> {
     // For JSON/YAML, return the structured agent object
     serialize: (_item) => agent,
   };
-}
-
-/** Shorten home directory in path */
-function shortenPath(path: string): string {
-  const home = process.env.HOME;
-  if (home && path.startsWith(home)) {
-    return "~" + path.slice(home.length);
-  }
-  return path;
 }
 
 /** Format cost in USD */
@@ -166,7 +158,7 @@ function toInspectRows(agent: AgentInspect): InspectRow[] {
     { key: "Archived", value: String(agent.Archived) },
     { key: "ArchivedAt", value: agent.ArchivedAt ?? "null" },
     { key: "Mode", value: agent.Mode },
-    { key: "Cwd", value: shortenPath(agent.Cwd) },
+    { key: "Cwd", value: shortenHomePath(agent.Cwd) },
     { key: "CreatedAt", value: agent.CreatedAt },
     { key: "UpdatedAt", value: agent.UpdatedAt },
   ];

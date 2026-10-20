@@ -105,6 +105,10 @@ class TestClock implements ReconciliationClock {
   private now = 0;
   private readonly timers = new Set<TestTimer>();
 
+  get currentTime(): number {
+    return this.now;
+  }
+
   get pendingCount(): number {
     return this.timers.size;
   }
@@ -200,6 +204,8 @@ class ObservedPlacements {
       clock: this.clock,
       debounceMs: DEBOUNCE_MS,
       rescanIntervalMs: RESCAN_INTERVAL_MS,
+      missingDirectoryArchiveDelayMs: RESCAN_INTERVAL_MS,
+      now: () => this.clock.currentTime,
       onProjectUpdate: (update) => {
         this.projectEvents.push(update);
         this.lifecycleEvents.push(
@@ -480,7 +486,7 @@ describe("observed workspace placement", () => {
     observed.dispose();
   });
 
-  test("archives missing workspace directories on the periodic pass", async () => {
+  test("archives missing workspace directories on the second periodic pass", async () => {
     const observed = new ObservedPlacements([
       {
         id: "project-one",
@@ -493,8 +499,13 @@ describe("observed workspace placement", () => {
 
     await observed.advanceBy(RESCAN_INTERVAL_MS);
 
-    expect((await observed.placement("workspace-one"))?.archivedAt).toEqual(expect.any(String));
+    expect((await observed.placement("workspace-one"))?.archivedAt).toBeNull();
     expect(observed.workspaceBatches).toEqual([["workspace-one"]]);
+
+    await observed.advanceBy(RESCAN_INTERVAL_MS);
+
+    expect((await observed.placement("workspace-one"))?.archivedAt).toEqual(expect.any(String));
+    expect(observed.workspaceBatches).toEqual([["workspace-one"], ["workspace-one"]]);
     observed.dispose();
   });
 
@@ -519,8 +530,14 @@ describe("observed workspace placement", () => {
     await metadataPass;
     await workspaceBatch;
 
-    expect((await observed.placement("workspace-one"))?.archivedAt).toEqual(expect.any(String));
+    // Only a full pass reports the missing folder.
     expect(observed.workspaceBatches).toEqual([["workspace-one"]]);
+
+    const archiveBatch = observed.waitForWorkspaceBatch();
+    await observed.advanceBy(RESCAN_INTERVAL_MS * 2);
+    await archiveBatch;
+
+    expect((await observed.placement("workspace-one"))?.archivedAt).toEqual(expect.any(String));
     observed.dispose();
   });
 

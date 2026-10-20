@@ -47,6 +47,7 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
   // Checkout branch (null when not a git checkout or detached HEAD).
   currentBranch: string | null;
   archivingAt: string | null;
+  folderMissing?: boolean;
   diffStat: { additions: number; deletions: number } | null;
   prHint: PrHint | null;
   archiveHasUncommittedChanges: boolean | null;
@@ -174,6 +175,7 @@ export function createSidebarWorkspaceEntry(input: {
     statusBucket: effectiveStatus.status,
     statusEnteredAt: effectiveStatus.enteredAt,
     archivingAt: input.workspace.archivingAt,
+    ...(input.workspace.folderMissing ? { folderMissing: true } : {}),
     diffStat: input.workspace.diffStat,
     prHint: selectPrHintFromStatus(
       input.workspace.githubRuntime?.pullRequest,

@@ -121,6 +121,7 @@ export interface WorkspaceDescriptor {
   status: WorkspaceDescriptorPayload["status"];
   statusEnteredAt: Date | null;
   archivingAt: string | null;
+  folderMissing?: boolean;
   diffStat: { additions: number; deletions: number } | null;
   scripts: WorkspaceDescriptorPayload["scripts"];
   gitRuntime?: WorkspaceDescriptorPayload["gitRuntime"];
@@ -160,6 +161,8 @@ export function normalizeWorkspaceDescriptor(
     status: payload.status,
     statusEnteredAt,
     archivingAt: payload.archivingAt ?? null,
+    // COMPAT(workspaceFolderMissing): old daemons omit the flag.
+    ...(payload.folderMissing ? { folderMissing: true } : {}),
     diffStat: payload.diffStat ?? null,
     scripts: (payload.scripts ?? []).map((s) => Object.assign({}, s)),
     gitRuntime: payload.gitRuntime,

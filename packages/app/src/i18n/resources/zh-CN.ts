@@ -1267,6 +1267,7 @@ export const zhCN: TranslationResources = {
         manual: "手动: {{count}}",
         pending: "等待中: {{count}}",
       },
+      folderMissing: "文件夹缺失",
       actions: {
         menu: "Workspace 操作",
         newWorkspace: "新建 workspace",

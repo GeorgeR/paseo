@@ -1277,6 +1277,7 @@ export const ar: TranslationResources = {
         manual: "يدوية: {{count}}",
         pending: "قيد الانتظار: {{count}}",
       },
+      folderMissing: "المجلد مفقود",
       actions: {
         menu: "إجراءات Workspace",
         newWorkspace: "مساحة عمل جديدة",

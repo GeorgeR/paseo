@@ -1295,6 +1295,7 @@ export const ru: TranslationResources = {
         manual: "Вручную: {{count}}",
         pending: "Ожидают: {{count}}",
       },
+      folderMissing: "Папка отсутствует",
       actions: {
         menu: "Действия рабочего пространства",
         newWorkspace: "Новое рабочее пространство",

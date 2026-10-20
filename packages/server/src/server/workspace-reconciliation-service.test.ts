@@ -230,6 +230,17 @@ function createTempGitRepo(prefix: string): string {
 }
 
 const timestamp = "2025-01-01T00:00:00.000Z";
+const FIVE_MINUTES_MS = 5 * 60_000;
+
+function createManualTime() {
+  let nowMs = 1_000_000;
+  return {
+    now: () => nowMs,
+    advance: (elapsedMs: number) => {
+      nowMs += elapsedMs;
+    },
+  };
+}
 
 describe("WorkspaceReconciliationService", () => {
   const tempDirs: string[] = [];
@@ -330,10 +341,12 @@ describe("WorkspaceReconciliationService", () => {
         updatedAt: timestamp,
       }),
     );
+    const time = createManualTime();
     const service = new WorkspaceReconciliationService({
       projectRegistry,
       workspaceRegistry,
       logger: createTestLogger(),
+      now: time.now,
     });
 
     const metadataResult = await service.reconcileGitMetadata();
@@ -354,6 +367,8 @@ describe("WorkspaceReconciliationService", () => {
     ]);
     expect(workspaces.get("w1")?.archivedAt).toBeNull();
 
+    await service.runOnce();
+    time.advance(FIVE_MINUTES_MS);
     const fullResult = await service.runOnce();
 
     expect(fullResult.changesApplied).toEqual([
@@ -597,16 +612,12 @@ describe("WorkspaceReconciliationService", () => {
     });
   });
 
-  test("archives workspaces whose directories no longer exist", async () => {
-    const projectRoot = realpathSync(
-      mkdtempSync(path.join(tmpdir(), "reconcile-missing-workspace-")),
-    );
+  function seedMissingDirectoryWorkspace(prefix: string) {
+    const projectRoot = realpathSync(mkdtempSync(path.join(tmpdir(), prefix)));
     const missingWorkspace = path.join(projectRoot, "missing-workspace");
     tempDirs.push(projectRoot);
-    const { projects, workspaces, projectRegistry, workspaceRegistry } = createTestRegistries();
-    const archivedWorkspaceIds: string[] = [];
-
-    projects.set(
+    const registries = createTestRegistries();
+    registries.projects.set(
       "p1",
       createPersistedProjectRecord({
         projectId: "p1",
@@ -618,7 +629,7 @@ describe("WorkspaceReconciliationService", () => {
         updatedAt: timestamp,
       }),
     );
-    workspaces.set(
+    registries.workspaces.set(
       "w1",
       createPersistedWorkspaceRecord({
         workspaceId: "w1",
@@ -630,19 +641,46 @@ describe("WorkspaceReconciliationService", () => {
         updatedAt: timestamp,
       }),
     );
+    return { ...registries, projectRoot, missingWorkspace };
+  }
 
+  test("archives a missing workspace only on a second scan at least five minutes after the first", async () => {
+    const { workspaces, projectRegistry, workspaceRegistry, missingWorkspace } =
+      seedMissingDirectoryWorkspace("reconcile-missing-workspace-");
+    const archivedWorkspaceIds: string[] = [];
+    const time = createManualTime();
     const service = new WorkspaceReconciliationService({
       projectRegistry,
       workspaceRegistry,
       logger: createTestLogger(),
+      now: time.now,
       onWorkspaceArchived: (workspaceId) => {
         archivedWorkspaceIds.push(workspaceId);
       },
     });
 
-    const result = await service.runOnce();
+    const firstScan = await service.runOnce();
 
-    expect(result.changesApplied).toEqual([
+    expect(firstScan.changesApplied).toEqual([
+      {
+        kind: "workspace_folder_state",
+        workspaceId: "w1",
+        directory: missingWorkspace,
+        folderMissing: true,
+      },
+    ]);
+    expect(workspaces.get("w1")?.archivedAt).toBeNull();
+
+    time.advance(FIVE_MINUTES_MS - 1);
+    const earlyScan = await service.runOnce();
+
+    expect(earlyScan.changesApplied).toEqual([]);
+    expect(workspaces.get("w1")?.archivedAt).toBeNull();
+
+    time.advance(1);
+    const secondScan = await service.runOnce();
+
+    expect(secondScan.changesApplied).toEqual([
       {
         kind: "workspace_archived",
         workspaceId: "w1",
@@ -652,6 +690,147 @@ describe("WorkspaceReconciliationService", () => {
     ]);
     expect(archivedWorkspaceIds).toEqual(["w1"]);
     expect(workspaces.get("w1")?.archivedAt).toEqual(expect.any(String));
+  });
+
+  test("does not count a scan from before a daemon restart toward archiving", async () => {
+    const { workspaces, projectRegistry, workspaceRegistry } = seedMissingDirectoryWorkspace(
+      "reconcile-missing-restart-",
+    );
+    const time = createManualTime();
+    const createService = () =>
+      new WorkspaceReconciliationService({
+        projectRegistry,
+        workspaceRegistry,
+        logger: createTestLogger(),
+        now: time.now,
+      });
+
+    await createService().runOnce();
+    time.advance(FIVE_MINUTES_MS);
+    const restarted = createService();
+    await restarted.runOnce();
+
+    expect(workspaces.get("w1")?.archivedAt).toBeNull();
+
+    time.advance(FIVE_MINUTES_MS);
+    await restarted.runOnce();
+
+    expect(workspaces.get("w1")?.archivedAt).toEqual(expect.any(String));
+  });
+
+  test("keeps a workspace whose directory returns between scans and clears its missing marker", async () => {
+    const { workspaces, projectRegistry, workspaceRegistry, missingWorkspace } =
+      seedMissingDirectoryWorkspace("reconcile-missing-returns-");
+    const time = createManualTime();
+    const service = new WorkspaceReconciliationService({
+      projectRegistry,
+      workspaceRegistry,
+      logger: createTestLogger(),
+      now: time.now,
+    });
+
+    await service.runOnce();
+    mkdirSync(missingWorkspace);
+    time.advance(FIVE_MINUTES_MS);
+    const returnedScan = await service.runOnce();
+
+    expect(returnedScan.changesApplied).toEqual([
+      {
+        kind: "workspace_folder_state",
+        workspaceId: "w1",
+        directory: missingWorkspace,
+        folderMissing: false,
+      },
+    ]);
+    expect(workspaces.get("w1")?.archivedAt).toBeNull();
+
+    // The earlier sighting no longer counts: going missing again starts over.
+    rmSync(missingWorkspace, { recursive: true, force: true });
+    time.advance(FIVE_MINUTES_MS);
+    await service.runOnce();
+
+    expect(workspaces.get("w1")?.archivedAt).toBeNull();
+
+    time.advance(FIVE_MINUTES_MS);
+    await service.runOnce();
+
+    expect(workspaces.get("w1")?.archivedAt).toEqual(expect.any(String));
+  });
+
+  test("never archives a subdirectory workspace while its checkout root exists and reports it folder-missing", async () => {
+    const repoRoot = createTempGitRepo("reconcile-missing-subdir-");
+    tempDirs.push(repoRoot);
+    const subdirectory = path.join(repoRoot, "packages", "app");
+    const { projects, workspaces, projectRegistry, workspaceRegistry } = createTestRegistries();
+    projects.set(
+      "p1",
+      createPersistedProjectRecord({
+        projectId: "p1",
+        rootPath: repoRoot,
+        projectKey: canonicalLocalProjectKey(repoRoot),
+        kind: "git",
+        displayName: "repo",
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }),
+    );
+    workspaces.set(
+      "w1",
+      createPersistedWorkspaceRecord({
+        workspaceId: "w1",
+        projectId: "p1",
+        cwd: subdirectory,
+        kind: "local_checkout",
+        displayName: "app",
+        branch: "main",
+        worktreeRoot: repoRoot,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }),
+    );
+    const checkouts = new TestCheckouts();
+    checkouts.set(
+      repoRoot,
+      createCheckout(repoRoot, { isGit: true, currentBranch: "main", worktreeRoot: repoRoot }),
+    );
+    const time = createManualTime();
+    const service = new WorkspaceReconciliationService({
+      projectRegistry,
+      workspaceRegistry,
+      logger: createTestLogger(),
+      workspaceGitService: checkouts,
+      now: time.now,
+    });
+
+    const firstScan = await service.runOnce();
+    const laterScanChangeKinds: string[][] = [];
+    for (let scan = 0; scan < 3; scan += 1) {
+      time.advance(FIVE_MINUTES_MS);
+      const result = await service.runOnce();
+      laterScanChangeKinds.push(result.changesApplied.map((change) => change.kind));
+    }
+
+    expect(firstScan.changesApplied).toEqual([
+      {
+        kind: "workspace_folder_state",
+        workspaceId: "w1",
+        directory: subdirectory,
+        folderMissing: true,
+      },
+    ]);
+    expect(laterScanChangeKinds).toEqual([[], [], []]);
+    expect(workspaces.get("w1")?.archivedAt).toBeNull();
+
+    mkdirSync(subdirectory, { recursive: true });
+    time.advance(FIVE_MINUTES_MS);
+    const returnedScan = await service.runOnce();
+
+    expect(returnedScan.changesApplied).toContainEqual({
+      kind: "workspace_folder_state",
+      workspaceId: "w1",
+      directory: subdirectory,
+      folderMissing: false,
+    });
   });
 
   test("keeps workspaces whose project root is missing with them", async () => {
@@ -685,15 +864,27 @@ describe("WorkspaceReconciliationService", () => {
       }),
     );
 
+    const time = createManualTime();
     const service = new WorkspaceReconciliationService({
       projectRegistry,
       workspaceRegistry,
       logger: createTestLogger(),
+      now: time.now,
     });
 
     const result = await service.runOnce();
+    time.advance(FIVE_MINUTES_MS);
+    const laterResult = await service.runOnce();
 
-    expect(result.changesApplied).toEqual([]);
+    expect(result.changesApplied).toEqual([
+      {
+        kind: "workspace_folder_state",
+        workspaceId: "w1",
+        directory: projectRoot,
+        folderMissing: true,
+      },
+    ]);
+    expect(laterResult.changesApplied).toEqual([]);
     expect(workspaces.get("w1")?.archivedAt).toBeNull();
   });
 
@@ -726,12 +917,16 @@ describe("WorkspaceReconciliationService", () => {
       }),
     );
 
+    const time = createManualTime();
     const service = new WorkspaceReconciliationService({
       projectRegistry,
       workspaceRegistry,
       logger: createTestLogger(),
+      now: time.now,
     });
 
+    await service.runOnce();
+    time.advance(FIVE_MINUTES_MS);
     const result = await service.runOnce();
 
     expect(result.changesApplied).toEqual([
@@ -1285,10 +1480,12 @@ describe("WorkspaceReconciliationService", () => {
       }),
     );
 
+    const time = createManualTime();
     const service = new WorkspaceReconciliationService({
       projectRegistry,
       workspaceRegistry,
       logger: createTestLogger(),
+      now: time.now,
       workspaceGitService: {
         getCheckout: async (cwd) => {
           if (cwd === replacedWorkspace) {
@@ -1304,13 +1501,15 @@ describe("WorkspaceReconciliationService", () => {
     });
 
     const result = await service.runOnce();
+    time.advance(FIVE_MINUTES_MS);
+    const laterResult = await service.runOnce();
 
     expect(result.changesApplied).toEqual([
       {
-        kind: "workspace_archived",
+        kind: "workspace_folder_state",
         workspaceId: "replaced",
         directory: replacedWorkspace,
-        reason: "directory_missing",
+        folderMissing: true,
       },
       {
         kind: "project_updated",
@@ -1327,6 +1526,14 @@ describe("WorkspaceReconciliationService", () => {
           branch: "feature/sibling",
           worktreeRoot: siblingWorkspace,
         },
+      },
+    ]);
+    expect(laterResult.changesApplied).toEqual([
+      {
+        kind: "workspace_archived",
+        workspaceId: "replaced",
+        directory: replacedWorkspace,
+        reason: "directory_missing",
       },
     ]);
     expect(workspaces.get("replaced")?.archivedAt).toEqual(expect.any(String));
@@ -1467,16 +1674,26 @@ describe("WorkspaceReconciliationService", () => {
     );
 
     const reportedChanges: ReconciliationChange[] = [];
+    const time = createManualTime();
     const service = new WorkspaceReconciliationService({
       projectRegistry,
       workspaceRegistry,
       logger: createTestLogger(),
+      now: time.now,
       onChanges: (changes) => reportedChanges.push(...changes),
     });
 
     await service.runOnce();
+    time.advance(FIVE_MINUTES_MS);
+    await service.runOnce();
 
     expect(reportedChanges).toEqual([
+      {
+        kind: "workspace_folder_state",
+        workspaceId: "w1",
+        directory: missingWorkspace,
+        folderMissing: true,
+      },
       {
         kind: "workspace_archived",
         workspaceId: "w1",
@@ -1518,12 +1735,17 @@ describe("WorkspaceReconciliationService", () => {
       }),
     );
 
+    const time = createManualTime();
     const service = new WorkspaceReconciliationService({
       projectRegistry,
       workspaceRegistry,
       logger,
+      now: time.now,
     });
 
+    await service.runOnce();
+    infoRecords.length = 0;
+    time.advance(FIVE_MINUTES_MS);
     await service.runOnce();
 
     expect(infoRecords).toEqual([

@@ -208,7 +208,7 @@ function paintNativeChangeIcon(
   const change = diffFileChangeKind(file.file);
   let source = paints.statusWarning;
   if (change === "added") source = paints.statusSuccess;
-  else if (change === "deleted") source = paints.statusDanger;
+  else if (change === "deleted" || change === "conflicted") source = paints.statusDanger;
   const stroke = source.copy();
   stroke.setStyle(PaintStyle.Stroke);
   stroke.setStrokeWidth(DIFF_FILE_HEADER_ICON_SIZE / 12);
@@ -228,6 +228,9 @@ function paintNativeChangeIcon(
     canvas.drawLine(x + 12 * scale, y + 8 * scale, x + 12 * scale, y + 16 * scale, stroke);
   } else if (change === "deleted") {
     canvas.drawLine(x + 8 * scale, y + 12 * scale, x + 16 * scale, y + 12 * scale, stroke);
+  } else if (change === "conflicted") {
+    canvas.drawLine(x + 12 * scale, y + 8 * scale, x + 12 * scale, y + 12 * scale, stroke);
+    canvas.drawCircle(x + 12 * scale, y + 16 * scale, scale, stroke);
   } else {
     canvas.drawCircle(x + 12 * scale, y + 12 * scale, scale, stroke);
   }

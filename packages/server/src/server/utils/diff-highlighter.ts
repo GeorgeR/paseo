@@ -22,6 +22,7 @@ export interface ParsedDiffFile {
   path: string;
   isNew: boolean;
   isDeleted: boolean;
+  conflicted?: boolean;
   additions: number;
   deletions: number;
   hunks: DiffHunk[];

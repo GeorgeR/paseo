@@ -826,6 +826,23 @@ const x = 1;
     ]);
   });
 
+  it("marks files with unresolved merge conflicts as conflicted", async () => {
+    commitFile(repoDir, "other.txt", "other\n", "add other file");
+    execFileSync("git", ["checkout", "-b", "feature"], { cwd: repoDir });
+    commitFile(repoDir, "file.txt", "feature\n", "feature edit");
+    execFileSync("git", ["checkout", "main"], { cwd: repoDir });
+    commitFile(repoDir, "file.txt", "main\n", "main edit");
+    spawnSync("git", ["-c", "commit.gpgsign=false", "merge", "feature"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "other.txt"), "other edited\n");
+
+    const diff = await getCheckoutDiff(repoDir, { mode: "uncommitted", includeStructured: true });
+
+    expect(diff.structured?.map((file) => [file.path, file.conflicted === true])).toEqual([
+      ["file.txt", true],
+      ["other.txt", false],
+    ]);
+  });
+
   it("returns checkout root metadata for normal repos", async () => {
     const status = await getCheckoutStatus(repoDir);
     expect(status.isGit).toBe(true);

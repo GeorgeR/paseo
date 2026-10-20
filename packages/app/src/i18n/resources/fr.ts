@@ -978,6 +978,7 @@ export const fr: TranslationResources = {
         newFile: "Nouveau",
         deletedFile: "Supprimé",
         modifiedFile: "Modifié",
+        conflictedFile: "En conflit",
         commits: {
           title: "Commits",
           countLabel: "{{count}} commits de l’espace de travail",

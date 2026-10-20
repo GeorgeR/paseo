@@ -962,6 +962,7 @@ export const en = {
         newFile: "New",
         deletedFile: "Deleted",
         modifiedFile: "Modified",
+        conflictedFile: "Conflicted",
         commits: {
           title: "Commits",
           countLabel: "{{count}} workspace commits",

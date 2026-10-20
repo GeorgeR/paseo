@@ -560,6 +560,43 @@ describe("runGitCommand", () => {
     });
   });
 
+  it("removes remote URL credentials from failure and timeout messages", async () => {
+    const { runGitCommand } = await loadRunGitCommand(1);
+
+    enqueueSpawnBehaviors(
+      {
+        delayMs: 0,
+        exitCode: 128,
+        stderrData:
+          "fatal: unable to access 'https://ghp_token123@github.com/acme/app.git/': denied\n" +
+          "fatal: could not read from 'ssh://deploy:hunter2@git.example.com/app.git'\n",
+      },
+      { delayMs: 5_000 },
+    );
+
+    const failure = await runGitCommand(
+      ["fetch", "https://user:pa55word@git.example.com/app.git"],
+      { cwd: process.cwd() },
+    ).then(
+      () => null,
+      (error: Error) => error.message,
+    );
+    expect(failure).toBe(
+      "Git command failed: git fetch https://git.example.com/app.git (exit code: 128, signal: none)\n" +
+        "fatal: unable to access 'https://github.com/acme/app.git/': denied\n" +
+        "fatal: could not read from 'ssh://deploy@git.example.com/app.git'",
+    );
+
+    await expect(
+      runGitCommand(["ls-remote", "https://ghp_token123@github.com/acme/app.git"], {
+        cwd: process.cwd(),
+        timeout: 20,
+      }),
+    ).rejects.toThrow(
+      "Git command timed out after 20ms: git ls-remote https://github.com/acme/app.git",
+    );
+  });
+
   it("resolves accepted non-zero exit codes", async () => {
     const { runGitCommand } = await loadRunGitCommand(1);
 

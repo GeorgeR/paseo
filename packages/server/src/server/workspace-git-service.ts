@@ -76,6 +76,7 @@ import {
   createFileObserver,
 } from "./file-observer/index.js";
 import { checkoutLiteFromGitSnapshot } from "./workspace-registry-model.js";
+import { redactUrlCredentials } from "../utils/redact-credentials.js";
 import { createWatcherLivenessCanary } from "./watcher-liveness-canary.js";
 
 const WORKSPACE_GIT_WATCH_DEBOUNCE_MS = 1_000;
@@ -3376,7 +3377,8 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       repoRoot: checkoutStatus.repoRoot,
       mainRepoRoot: checkoutStatus.mainRepoRoot,
       currentBranch: checkoutStatus.currentBranch,
-      remoteUrl: checkoutStatus.remoteUrl,
+      // Clients and logs see the remote without credentials; forges match host and path only.
+      remoteUrl: checkoutStatus.remoteUrl && redactUrlCredentials(checkoutStatus.remoteUrl),
       isPaseoOwnedWorktree: checkoutStatus.isPaseoOwnedWorktree,
       isDirty: refreshWorktree
         ? checkoutStatus.isDirty

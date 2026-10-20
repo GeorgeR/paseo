@@ -162,6 +162,7 @@ export const SidebarWorkspaceRowContent = memo(function SidebarWorkspaceRowConte
             <View style={sidebarWorkspaceRowStyles.rowRight}>{children}</View>
           </View>
           <WorkspaceMetaRow
+            folderMissing={workspace.folderMissing ?? false}
             currentBranch={workspace.currentBranch}
             projectName={leadingProjectName}
             hostBadge={hostBadge ?? null}

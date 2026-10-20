@@ -78,6 +78,21 @@ describe("selectMetaRowItems", () => {
     ]);
   });
 
+  it("leads with a missing folder whatever the display preferences", () => {
+    const visible = {
+      ...DEFAULT_SIDEBAR_ROW_ITEMS,
+      changeRequest: false,
+      services: false,
+      labels: false,
+    };
+    expect(kinds(select({ folderMissing: true, visible }))).toEqual([
+      "folderMissing",
+      "host",
+      "checks",
+    ]);
+    expect(kinds(select({ folderMissing: false }))).not.toContain("folderMissing");
+  });
+
   it("carries every label as one item, so the line keeps one separator however many there are", () => {
     const labels: WorkspaceLabelDefinition[] = [
       { name: "Urgent", color: "red" },

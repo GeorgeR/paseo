@@ -5591,6 +5591,7 @@ export class Session {
       workspace.isPaseoOwnedWorktree && workspace.worktreeRoot
         ? basename(workspace.worktreeRoot)
         : undefined;
+    const folderMissing = await isWorkspaceFolderMissing(workspace.cwd);
 
     return {
       id: workspace.workspaceId,
@@ -5611,6 +5612,7 @@ export class Session {
       ...(workspace.labels && workspace.labels.length > 0 ? { labels: workspace.labels } : {}),
       background: workspace.background,
       archivingAt: null,
+      ...(folderMissing ? { folderMissing } : {}),
       status: "done",
       statusEnteredAt: null,
       activityAt: null,
@@ -8682,5 +8684,15 @@ function legacyWantsEvent(
       return capabilities.has(CLIENT_CAPS.providerSubagents);
     default:
       return true;
+  }
+}
+
+/** True only when the workspace directory is conclusively gone, not when it is unreadable. */
+async function isWorkspaceFolderMissing(cwd: string): Promise<boolean> {
+  try {
+    return !(await stat(cwd)).isDirectory();
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | null)?.code;
+    return code === "ENOENT" || code === "ENOTDIR";
   }
 }

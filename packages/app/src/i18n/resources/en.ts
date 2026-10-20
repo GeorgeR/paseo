@@ -1285,6 +1285,7 @@ export const en = {
         manual: "Manual: {{count}}",
         pending: "Pending: {{count}}",
       },
+      folderMissing: "Folder missing",
       actions: {
         menu: "Workspace actions",
         newWorkspace: "New workspace",

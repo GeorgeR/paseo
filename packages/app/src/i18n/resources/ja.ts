@@ -1291,6 +1291,7 @@ export const ja: TranslationResources = {
         manual: "手動: {{count}}",
         pending: "保留中: {{count}}",
       },
+      folderMissing: "フォルダーがありません",
       actions: {
         menu: "ワークスペースアクション",
         newWorkspace: "新しいワークスペース",

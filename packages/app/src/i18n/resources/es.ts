@@ -1313,6 +1313,7 @@ export const es: TranslationResources = {
         manual: "Manuales: {{count}}",
         pending: "Pendientes: {{count}}",
       },
+      folderMissing: "Carpeta no encontrada",
       actions: {
         menu: "AccionesWorkspace",
         newWorkspace: "Nuevo espacio de trabajo",

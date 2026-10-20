@@ -681,6 +681,28 @@ describe("workspace message schemas", () => {
     expect(parsed.worktreeSlug).toBe("feature");
   });
 
+  test("accepts descriptors with and without the folder-missing flag", () => {
+    const baseWorkspace = {
+      id: "ws-folder-missing",
+      projectId: "proj",
+      projectDisplayName: "repo",
+      projectRootPath: "/repo",
+      workspaceDirectory: "/repo/packages/app",
+      projectKind: "git",
+      workspaceKind: "local_checkout",
+      name: "app",
+      status: "done",
+      activityAt: null,
+      scripts: [],
+    } as const;
+
+    expect(WorkspaceDescriptorPayloadSchema.parse(baseWorkspace).folderMissing).toBeUndefined();
+    expect(
+      WorkspaceDescriptorPayloadSchema.parse({ ...baseWorkspace, folderMissing: true })
+        .folderMissing,
+    ).toBe(true);
+  });
+
   test("defaults omitted workspace archiving state and preserves present timestamps", () => {
     const baseWorkspace = {
       id: "ws-archiving",

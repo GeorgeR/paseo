@@ -2,7 +2,7 @@ import { Fragment, useCallback, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View, type GestureResponderEvent } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import { ExternalLink, Folder, GitBranch, Globe } from "lucide-react-native";
+import { ExternalLink, Folder, FolderX, GitBranch, Globe } from "lucide-react-native";
 import {
   workspaceLabelKey,
   type WorkspaceLabelDefinition,
@@ -36,6 +36,7 @@ const META_ICON_SIZE = HOST_BADGE_ICON_SIZE;
 
 const ThemedExternalLink = withUnistyles(ExternalLink);
 const ThemedFolder = withUnistyles(Folder);
+const ThemedFolderX = withUnistyles(FolderX);
 const ThemedGitBranch = withUnistyles(GitBranch);
 const ThemedGlobe = withUnistyles(Globe);
 
@@ -45,6 +46,7 @@ const EMPTY_LABELS: readonly WorkspaceLabelDefinition[] = [];
 const foregroundMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const mutedMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
 const dangerMapping = (theme: Theme) => ({ color: theme.colors.statusDanger });
+const warningMapping = (theme: Theme) => ({ color: theme.colors.statusWarning });
 
 /**
  * The subtitle under a workspace title: which host it lives on, its change request, that
@@ -61,6 +63,7 @@ const dangerMapping = (theme: Theme) => ({ color: theme.colors.statusDanger });
  * read first, and it stays the same height as the rest of the line.
  */
 export function WorkspaceMetaRow({
+  folderMissing = false,
   currentBranch,
   projectName,
   hostBadge,
@@ -68,6 +71,7 @@ export function WorkspaceMetaRow({
   serviceSummary,
   labels = EMPTY_LABELS,
 }: {
+  folderMissing?: boolean;
   currentBranch: string | null;
   projectName: string | null;
   hostBadge: HostBadgeModel | null;
@@ -77,6 +81,7 @@ export function WorkspaceMetaRow({
 }) {
   const { rowItems, checksDisplay } = useSidebarMetaPreferences();
   const items = selectMetaRowItems({
+    folderMissing,
     currentBranch,
     projectName,
     hasHostBadge: hostBadge !== null,
@@ -111,6 +116,9 @@ function MetaItemNode({
   /** First on the line, so this item's ink sets the rail the title above it already uses. */
   leading: boolean;
 }): ReactNode {
+  if (item.kind === "folderMissing") {
+    return <FolderMissingItem />;
+  }
   if (item.kind === "branch") {
     return <IdentityItem kind="branch" name={item.name} />;
   }
@@ -141,6 +149,22 @@ function IdentityItem({ kind, name }: { kind: "branch" | "project"; name: string
       </View>
       <Text style={styles.identityText} numberOfLines={1}>
         {name}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * The workspace directory is gone but the workspace is kept, for example a subdirectory that a
+ * `git switch` removed. Warning rather than danger: switching back brings it back.
+ */
+function FolderMissingItem() {
+  const { t } = useTranslation();
+  return (
+    <View style={styles.item} testID="sidebar-workspace-folder-missing">
+      <ThemedFolderX size={META_ICON_SIZE} uniProps={warningMapping} />
+      <Text style={styles.folderMissingText} numberOfLines={1}>
+        {t("sidebar.workspace.folderMissing")}
       </Text>
     </View>
   );
@@ -341,6 +365,12 @@ const styles = StyleSheet.create((theme) => ({
   },
   itemPressed: {
     opacity: 0.82,
+  },
+  folderMissingText: {
+    color: theme.colors.statusWarning,
+    fontSize: theme.fontSize.sm,
+    lineHeight: 16,
+    flexShrink: 0,
   },
   separator: {
     color: theme.colors.foregroundExtraMuted,

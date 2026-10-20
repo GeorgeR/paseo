@@ -16,6 +16,7 @@ import type { WorkspaceServiceSummary } from "./service-summary";
  * carries.
  */
 export type MetaRowItem =
+  | { kind: "folderMissing" }
   | { kind: "branch"; name: string }
   | { kind: "project"; name: string }
   | { kind: "host" }
@@ -35,6 +36,7 @@ export type MetaRowItem =
  * has no badge to hand down, so by the time a row sees one it is meant to be drawn.
  */
 export function selectMetaRowItems(input: {
+  folderMissing?: boolean;
   currentBranch: string | null;
   projectName: string | null;
   hasHostBadge: boolean;
@@ -56,6 +58,11 @@ export function selectMetaRowItems(input: {
   } = input;
   const items: MetaRowItem[] = [];
 
+  // Not a display preference: a workspace whose folder is gone can't run anything, so it says so
+  // before anything else on the line.
+  if (input.folderMissing) {
+    items.push({ kind: "folderMissing" });
+  }
   if (currentBranch && visible.branch) {
     items.push({ kind: "branch", name: currentBranch });
   }

@@ -4054,6 +4054,10 @@ export const WorkspaceDescriptorPayloadSchema = z
     internal: z.boolean().optional(),
     background: z.boolean().optional(),
     archivingAt: z.string().nullable().optional().default(null),
+    // COMPAT(workspaceFolderMissing): added in v0.11.3, remove optional after 2027-04-20.
+    // True while the workspace directory is gone but the workspace stays active, such as a
+    // subdirectory removed by `git switch`. Absent means the folder exists or the daemon is older.
+    folderMissing: z.boolean().optional(),
     status: WorkspaceStateBucketSchema,
     // Best-effort workspace status entry timestamp. Old daemons omit the
     // field; old clients treat missing and null equivalently. The transform

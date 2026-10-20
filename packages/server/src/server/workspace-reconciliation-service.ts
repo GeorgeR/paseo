@@ -8,7 +8,7 @@ import type {
   PersistedWorkspaceRecord,
 } from "./workspace-registry.js";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
-import { areEquivalentPaths } from "../utils/path.js";
+import { areEquivalentPaths, isPathInsideRoot } from "../utils/path.js";
 import {
   deriveProjectKind,
   reconcileWorkspacePlacement,
@@ -19,6 +19,10 @@ import { deriveProjectKey } from "./project-key.js";
 
 const DEFAULT_RESCAN_INTERVAL_MS = 5 * 60_000;
 const DEFAULT_DEBOUNCE_MS = 100;
+// A full scan only archives a workspace whose directory was already missing on an
+// earlier scan at least this long ago. Sightings live in memory, so the boot scan
+// after a restart always counts as a first sighting.
+const DEFAULT_MISSING_DIRECTORY_ARCHIVE_DELAY_MS = 5 * 60_000;
 
 export type ProjectUpdate =
   | { kind: "upsert"; project: PersistedProjectRecord }
@@ -64,6 +68,12 @@ const watchProjectRoot: ProjectRootWatch = (rootPath, options, onChange, onError
 export type ReconciliationChange =
   | { kind: "workspace_archived"; workspaceId: string; directory: string; reason: string }
   | {
+      kind: "workspace_folder_state";
+      workspaceId: string;
+      directory: string;
+      folderMissing: boolean;
+    }
+  | {
       kind: "project_updated";
       projectId: string;
       directory: string;
@@ -95,6 +105,8 @@ export interface WorkspaceReconciliationServiceOptions {
   clock?: ReconciliationClock;
   rescanIntervalMs?: number;
   debounceMs?: number;
+  missingDirectoryArchiveDelayMs?: number;
+  now?: () => number;
 }
 
 interface ProjectReconciliationInput {
@@ -126,6 +138,11 @@ export class WorkspaceReconciliationService {
   private readonly clock: ReconciliationClock;
   private readonly rescanIntervalMs: number;
   private readonly debounceMs: number;
+  private readonly missingDirectoryArchiveDelayMs: number;
+  private readonly now: () => number;
+  /** First full scan that saw each workspace's directory missing, by workspace id. */
+  private missingSinceByWorkspaceId = new Map<string, number>();
+  private folderMissingWorkspaceIds = new Set<string>();
   private readonly watchers: Array<{ rootPath: string; watcher: ProjectRootWatcher }> = [];
   private unsubscribeRegistry: (() => void) | null = null;
   private rescanTimer: ReconciliationTimer | null = null;
@@ -149,6 +166,9 @@ export class WorkspaceReconciliationService {
     this.clock = options.clock ?? systemClock;
     this.rescanIntervalMs = options.rescanIntervalMs ?? DEFAULT_RESCAN_INTERVAL_MS;
     this.debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
+    this.missingDirectoryArchiveDelayMs =
+      options.missingDirectoryArchiveDelayMs ?? DEFAULT_MISSING_DIRECTORY_ARCHIVE_DELAY_MS;
+    this.now = options.now ?? (() => performance.now());
   }
 
   async start(): Promise<void> {
@@ -249,12 +269,27 @@ export class WorkspaceReconciliationService {
     //    whole location is unavailable - an unmounted volume, an offline share, a disk
     //    that has not appeared yet - and absence there proves nothing about the
     //    workspace. Projects already persist through that; their workspaces do too.
-    const missingWorkspaces = workspaceDirectoryStates
-      .filter(
-        ({ workspace, state }) =>
-          state === "missing" && reachableProjectIds.has(workspace.projectId),
-      )
-      .map(({ workspace }) => workspace);
+    //    A directory has to stay missing across two scans at least the archive delay
+    //    apart, so a short-lived absence does not archive it. A subdirectory of a
+    //    checkout root that still exists is never archived: `git switch` removes and
+    //    restores those, and the workspace is shown as folder missing instead.
+    const scanStartedAt = this.now();
+    const nextMissingSince = new Map<string, number>();
+    const missingWorkspaces: PersistedWorkspaceRecord[] = [];
+    for (const { workspace, state } of workspaceDirectoryStates) {
+      if (state !== "missing" || !reachableProjectIds.has(workspace.projectId)) continue;
+      if (this.isSubdirectoryOfExistingCheckout(workspace)) continue;
+      const missingSince = this.missingSinceByWorkspaceId.get(workspace.workspaceId);
+      if (
+        missingSince !== undefined &&
+        scanStartedAt - missingSince >= this.missingDirectoryArchiveDelayMs
+      ) {
+        missingWorkspaces.push(workspace);
+      } else {
+        nextMissingSince.set(workspace.workspaceId, missingSince ?? scanStartedAt);
+      }
+    }
+    this.missingSinceByWorkspaceId = nextMissingSince;
     await Promise.all(
       missingWorkspaces.map(async (workspace) => {
         const timestamp = new Date().toISOString();
@@ -274,6 +309,10 @@ export class WorkspaceReconciliationService {
           workspacesByProject.set(workspace.projectId, updated);
         }
       }),
+    );
+    this.reportFolderStateChanges(
+      workspaceDirectoryStates.filter(({ workspace }) => !missingWorkspaces.includes(workspace)),
+      changes,
     );
 
     // 2. Reconcile mutable git metadata without changing identity or membership.
@@ -416,6 +455,37 @@ export class WorkspaceReconciliationService {
     );
   }
 
+  private isSubdirectoryOfExistingCheckout(workspace: PersistedWorkspaceRecord): boolean {
+    const checkoutRoot = workspace.worktreeRoot;
+    if (!checkoutRoot || areEquivalentPaths(checkoutRoot, workspace.cwd)) return false;
+    return (
+      isPathInsideRoot(checkoutRoot, workspace.cwd) &&
+      this.inspectDirectory(checkoutRoot) === "directory"
+    );
+  }
+
+  /** Reports workspaces whose directory went missing or came back since the last full scan. */
+  private reportFolderStateChanges(
+    workspaceDirectoryStates: Array<{ workspace: PersistedWorkspaceRecord; state: DirectoryState }>,
+    changes: ReconciliationChange[],
+  ): void {
+    const folderMissingWorkspaceIds = new Set<string>();
+    for (const { workspace, state } of workspaceDirectoryStates) {
+      const wasMissing = this.folderMissingWorkspaceIds.has(workspace.workspaceId);
+      // An unreadable directory keeps whatever the last conclusive scan reported.
+      const folderMissing = state === "unreadable" ? wasMissing : state === "missing";
+      if (folderMissing) folderMissingWorkspaceIds.add(workspace.workspaceId);
+      if (folderMissing === wasMissing) continue;
+      changes.push({
+        kind: "workspace_folder_state",
+        workspaceId: workspace.workspaceId,
+        directory: workspace.cwd,
+        folderMissing,
+      });
+    }
+    this.folderMissingWorkspaceIds = folderMissingWorkspaceIds;
+  }
+
   private async syncProjectRootWatches(): Promise<void> {
     if (this.disposed) return;
     const projects = await this.projectRegistry.list();
@@ -494,7 +564,11 @@ export class WorkspaceReconciliationService {
       const workspaceIds = new Set<string>();
       const projectIds = new Set<string>();
       for (const change of result.changesApplied) {
-        if (change.kind === "workspace_updated" || change.kind === "workspace_archived") {
+        if (
+          change.kind === "workspace_updated" ||
+          change.kind === "workspace_archived" ||
+          change.kind === "workspace_folder_state"
+        ) {
           workspaceIds.add(change.workspaceId);
         }
         if (change.kind === "project_updated") projectIds.add(change.projectId);

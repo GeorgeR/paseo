@@ -1303,6 +1303,7 @@ export const ptBR: TranslationResources = {
         manual: "Manuais: {{count}}",
         pending: "Pendentes: {{count}}",
       },
+      folderMissing: "Pasta ausente",
       actions: {
         menu: "Ações do workspace",
         newWorkspace: "Novo workspace",

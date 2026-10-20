@@ -727,7 +727,6 @@ function createSessionForWorkspaceTests(
       workspaceAutoName: new WorkspaceAutoName({
         agentManager,
         workspaceRegistry,
-        workspaceGitService,
         providerSnapshotManager,
         readDaemonConfig: () => ({ metadataGeneration: { providers: [] } }),
         gitMutation: { notifyGitMutation: async () => {} },
@@ -1196,7 +1195,6 @@ test("create_agent_request launches from an exact subdirectory in a created work
       workspaceAutoName: new WorkspaceAutoName({
         agentManager,
         workspaceRegistry,
-        workspaceGitService,
         providerSnapshotManager: createProviderSnapshotManagerStub().manager,
         readDaemonConfig: () => ({ metadataGeneration: { providers: [] } }),
         gitMutation: { notifyGitMutation: async () => {} },

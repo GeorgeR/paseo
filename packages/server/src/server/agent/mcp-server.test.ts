@@ -764,7 +764,6 @@ function createPaseoWorktreeForMcpTest(options: {
   const workspaceAutoName = new WorkspaceAutoName({
     agentManager: buildAgentManagerSpies() as unknown as AgentManager,
     workspaceRegistry,
-    workspaceGitService,
     providerSnapshotManager: createOpenCodeManager().manager,
     readDaemonConfig: () => ({ metadataGeneration: { providers: [] } }),
     gitMutation: createGitMutationService({
@@ -2297,7 +2296,6 @@ describe("create_agent MCP tool", () => {
           return updated;
         },
       },
-      workspaceGitService,
       providerSnapshotManager: createOpenCodeManager().manager,
       readDaemonConfig: () => ({ metadataGeneration: { providers: [] } }),
       gitMutation: createGitMutationService({

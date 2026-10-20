@@ -10,7 +10,6 @@ import {
   type AttemptFirstAgentBranchAutoNameResult,
 } from "./paseo-worktree-service.js";
 import type { GitMutationService } from "./session/git-mutation/git-mutation-service.js";
-import type { WorkspaceGitService } from "./workspace-git-service.js";
 import type { PersistedWorkspaceRecord, WorkspaceRegistry } from "./workspace-registry.js";
 import {
   generateBranchNameFromFirstAgentContext,
@@ -25,7 +24,6 @@ type CurrentSelection = GenerateBranchNameFromFirstAgentContextOptions["currentS
 interface WorkspaceAutoNameOptions {
   agentManager: AgentManager;
   workspaceRegistry: Pick<WorkspaceRegistry, "update">;
-  workspaceGitService: WorkspaceGitService;
   providerSnapshotManager: ProviderSnapshotManager;
   readDaemonConfig: () => StructuredGenerationDaemonConfig;
   gitMutation: Pick<GitMutationService, "notifyGitMutation">;
@@ -42,7 +40,6 @@ interface ScheduleContext {
 export class WorkspaceAutoName {
   private readonly agentManager: AgentManager;
   private readonly workspaceRegistry: Pick<WorkspaceRegistry, "update">;
-  private readonly workspaceGitService: WorkspaceGitService;
   private readonly providerSnapshotManager: ProviderSnapshotManager;
   private readonly readDaemonConfig: () => StructuredGenerationDaemonConfig;
   private readonly gitMutation: Pick<GitMutationService, "notifyGitMutation">;
@@ -54,7 +51,6 @@ export class WorkspaceAutoName {
   constructor(options: WorkspaceAutoNameOptions) {
     this.agentManager = options.agentManager;
     this.workspaceRegistry = options.workspaceRegistry;
-    this.workspaceGitService = options.workspaceGitService;
     this.providerSnapshotManager = options.providerSnapshotManager;
     this.readDaemonConfig = options.readDaemonConfig;
     this.gitMutation = options.gitMutation;
@@ -202,7 +198,6 @@ export class WorkspaceAutoName {
     return this.generateWorkspaceName({
       agentManager: this.agentManager,
       cwd: input.cwd,
-      workspaceGitService: this.workspaceGitService,
       providerSnapshotManager: this.providerSnapshotManager,
       daemonConfig: this.readDaemonConfig(),
       currentSelection: input.currentSelection ?? undefined,

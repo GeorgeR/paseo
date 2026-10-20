@@ -1104,7 +1104,6 @@ export async function createPaseoDaemon(
   const workspaceAutoName = new WorkspaceAutoName({
     agentManager,
     workspaceRegistry,
-    workspaceGitService,
     providerSnapshotManager,
     readDaemonConfig: () => ({ metadataGeneration: daemonConfigStore.get().metadataGeneration }),
     gitMutation: createGitMutationService({

@@ -2136,6 +2136,69 @@ const x = 1;
     expect(existsSync(join(gitDir, "rebase-apply"))).toBe(false);
   });
 
+  it("keeps a merge the user already had in progress when pull fails", async () => {
+    const remoteDir = join(tempDir, "remote.git");
+    execFileSync("git", ["init", "--bare", "-b", "main", remoteDir]);
+    execFileSync("git", ["remote", "add", "origin", remoteDir], { cwd: repoDir });
+    execFileSync("git", ["push", "-u", "origin", "main"], { cwd: repoDir });
+
+    execFileSync("git", ["checkout", "-b", "side"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "conflict.txt"), "side\n");
+    execFileSync("git", ["add", "conflict.txt"], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "side change"], {
+      cwd: repoDir,
+    });
+    execFileSync("git", ["checkout", "main"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "conflict.txt"), "main\n");
+    execFileSync("git", ["add", "conflict.txt"], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "main change"], {
+      cwd: repoDir,
+    });
+    expect(spawnSync("git", ["merge", "side"], { cwd: repoDir }).status).not.toBe(0);
+    writeFileSync(join(repoDir, "conflict.txt"), "resolved\n");
+    execFileSync("git", ["add", "conflict.txt"], { cwd: repoDir });
+
+    await expect(pullCurrentBranch(repoDir)).rejects.toBeInstanceOf(Error);
+
+    execFileSync("git", ["rev-parse", "-q", "--verify", "MERGE_HEAD"], { cwd: repoDir });
+    const staged = execFileSync("git", ["show", ":conflict.txt"], { cwd: repoDir }).toString();
+    expect(staged.replace(/\r\n/g, "\n")).toBe("resolved\n");
+  });
+
+  it("keeps a rebase the user already had in progress when pull fails", async () => {
+    const remoteDir = join(tempDir, "remote.git");
+    execFileSync("git", ["init", "--bare", "-b", "main", remoteDir]);
+    execFileSync("git", ["remote", "add", "origin", remoteDir], { cwd: repoDir });
+    execFileSync("git", ["push", "-u", "origin", "main"], { cwd: repoDir });
+
+    execFileSync("git", ["checkout", "-b", "side"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "conflict.txt"), "side\n");
+    execFileSync("git", ["add", "conflict.txt"], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "side change"], {
+      cwd: repoDir,
+    });
+    execFileSync("git", ["checkout", "main"], { cwd: repoDir });
+    writeFileSync(join(repoDir, "conflict.txt"), "main\n");
+    execFileSync("git", ["add", "conflict.txt"], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "main change"], {
+      cwd: repoDir,
+    });
+    expect(spawnSync("git", ["rebase", "side"], { cwd: repoDir }).status).not.toBe(0);
+    writeFileSync(join(repoDir, "conflict.txt"), "resolved\n");
+    execFileSync("git", ["add", "conflict.txt"], { cwd: repoDir });
+
+    await expect(pullCurrentBranch(repoDir)).rejects.toBeInstanceOf(Error);
+
+    const gitDir = execFileSync("git", ["rev-parse", "--absolute-git-dir"], { cwd: repoDir })
+      .toString()
+      .trim();
+    expect(
+      existsSync(join(gitDir, "rebase-merge")) || existsSync(join(gitDir, "rebase-apply")),
+    ).toBe(true);
+    const staged = execFileSync("git", ["show", ":conflict.txt"], { cwd: repoDir }).toString();
+    expect(staged.replace(/\r\n/g, "\n")).toBe("resolved\n");
+  });
+
   it("pushes the current branch to origin", async () => {
     const remoteDir = join(tempDir, "remote.git");
     execFileSync("git", ["init", "--bare", "-b", "main", remoteDir]);

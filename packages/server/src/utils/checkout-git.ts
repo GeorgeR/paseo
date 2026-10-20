@@ -1534,17 +1534,35 @@ async function resolveGitCommonDir(cwd: string, context?: CheckoutContext): Prom
   }
 }
 
-async function abortGitPullConflictState(cwd: string): Promise<void> {
+interface GitPullConflictState {
+  mergeInProgress: boolean;
+  rebaseInProgress: boolean;
+}
+
+async function readGitPullConflictState(cwd: string): Promise<GitPullConflictState | null> {
   const gitDir = await resolveAbsoluteGitDir(cwd);
   if (!gitDir) {
+    return null;
+  }
+  return {
+    mergeInProgress: existsSync(resolve(gitDir, "MERGE_HEAD")),
+    rebaseInProgress:
+      existsSync(resolve(gitDir, "rebase-merge")) || existsSync(resolve(gitDir, "rebase-apply")),
+  };
+}
+
+// Only abort merge/rebase state the failed pull created. State that existed
+// before the pull belongs to the user and aborting it drops their work.
+async function abortGitPullConflictState(
+  cwd: string,
+  stateBeforePull: GitPullConflictState | null,
+): Promise<void> {
+  const state = await readGitPullConflictState(cwd);
+  if (!state) {
     return;
   }
 
-  const mergeHeadPath = resolve(gitDir, "MERGE_HEAD");
-  const rebaseMergePath = resolve(gitDir, "rebase-merge");
-  const rebaseApplyPath = resolve(gitDir, "rebase-apply");
-
-  if (existsSync(mergeHeadPath)) {
+  if (state.mergeInProgress && !stateBeforePull?.mergeInProgress) {
     try {
       await runGitCommand(["merge", "--abort"], { cwd, timeout: 120_000 });
     } catch {
@@ -1552,7 +1570,7 @@ async function abortGitPullConflictState(cwd: string): Promise<void> {
     }
   }
 
-  if (existsSync(rebaseMergePath) || existsSync(rebaseApplyPath)) {
+  if (state.rebaseInProgress && !stateBeforePull?.rebaseInProgress) {
     try {
       await runGitCommand(["rebase", "--abort"], { cwd, timeout: 120_000 });
     } catch {
@@ -3874,11 +3892,12 @@ export async function pullCurrentBranch(cwd: string, forgeService?: ForgeService
   if (!hasRemote) {
     throw new Error("Remote 'origin' is not configured.");
   }
+  const stateBeforePull = await readGitPullConflictState(cwd);
   try {
     await runGitCommand(["pull"], { cwd, timeout: 120_000 });
     forgeService?.invalidate({ cwd });
   } catch (error) {
-    await abortGitPullConflictState(cwd);
+    await abortGitPullConflictState(cwd, stateBeforePull);
     throw error;
   }
 }

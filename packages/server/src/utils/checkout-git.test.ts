@@ -1110,6 +1110,29 @@ const x = 1;
     });
   });
 
+  it("reports a worktree under a configured worktrees.root without a worktrees segment as Paseo-owned", async () => {
+    const worktreesRoot = join(tempDir, "srv-wt");
+    // A non-default base proves the stored base ref is read rather than the default branch.
+    execFileSync("git", ["branch", "develop"], { cwd: repoDir });
+
+    const worktree = await createWorktreePrimitive({
+      cwd: repoDir,
+      worktreeSlug: "custom-root-feature",
+      source: { kind: "branch-off", baseBranch: "develop", branchName: "custom-root-feature" },
+      runSetup: true,
+      paseoHome,
+      worktreesRoot,
+    });
+    expect(worktree.worktreePath).not.toMatch(/[\\/]worktrees[\\/]/);
+
+    const status = await getCheckoutStatus(worktree.worktreePath, { paseoHome, worktreesRoot });
+    expect(status).toMatchObject({
+      isGit: true,
+      isPaseoOwnedWorktree: true,
+      baseRef: "develop",
+    });
+  });
+
   it("does not report local-only no-track worktree commits as ahead of origin", async () => {
     // This case needs a remote base ref, not a second clone or extra base history.
     execFileSync("git", ["remote", "add", "origin", repoDir], { cwd: repoDir });

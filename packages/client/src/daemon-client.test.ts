@@ -6796,10 +6796,11 @@ test.each([
           id: "claude",
           sourceId: "claude",
           sourceLabel: "Claude",
+          // Normalize so checkouts made with core.autocrlf=true still match the embedded copy.
           icon: readFileSync(
             new URL("../../../plugins/claude-usage-source/icon.svg", import.meta.url),
             "utf8",
-          ),
+          ).replace(/\r\n/g, "\n"),
           account: {},
           fetchedAt: "2026-09-30T00:00:00.000Z",
           report,

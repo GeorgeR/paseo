@@ -23,6 +23,8 @@ function createGitRepoWithBranch(): { repoDir: string; tempRoot: string } {
     stdio: "pipe",
   });
   execFileSync("git", ["config", "user.name", "Paseo Test"], { cwd: repoDir, stdio: "pipe" });
+  // Worktrees share this config, so checkouts keep the committed LF bytes on Windows too.
+  execFileSync("git", ["config", "core.autocrlf", "false"], { cwd: repoDir, stdio: "pipe" });
   execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "initial"], {
     cwd: repoDir,
     stdio: "pipe",

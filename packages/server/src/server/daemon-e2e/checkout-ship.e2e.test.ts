@@ -2,7 +2,7 @@ import { beforeEach, afterEach, describe, expect, test } from "vitest";
 import { mkdtempSync, writeFileSync, rmSync, existsSync, realpathSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
-import { execSync } from "child_process";
+import { execFileSync, execSync } from "child_process";
 
 import {
   createDaemonTestContext,
@@ -63,18 +63,18 @@ function hasGitHubCliAuth(): boolean {
 const testWithGitHubCliAuth = hasGitHubCliAuth() ? test : test.skip;
 
 function initGitRepo(repoDir: string): void {
-  execSync("git init -b main", { cwd: repoDir, stdio: "pipe" });
-  execSync("git config user.email 'paseo-test@example.com'", {
+  execFileSync("git", ["init", "-b", "main"], { cwd: repoDir, stdio: "pipe" });
+  execFileSync("git", ["config", "user.email", "paseo-test@example.com"], {
     cwd: repoDir,
     stdio: "pipe",
   });
-  execSync("git config user.name 'Paseo Test'", {
+  execFileSync("git", ["config", "user.name", "Paseo Test"], {
     cwd: repoDir,
     stdio: "pipe",
   });
   writeFileSync(path.join(repoDir, "README.md"), "init\n");
-  execSync("git add README.md", { cwd: repoDir, stdio: "pipe" });
-  execSync("git -c commit.gpgsign=false commit -m 'Initial commit'", {
+  execFileSync("git", ["add", "README.md"], { cwd: repoDir, stdio: "pipe" });
+  execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "Initial commit"], {
     cwd: repoDir,
     stdio: "pipe",
   });
@@ -132,14 +132,20 @@ describe("daemon checkout ship loop", () => {
         createPrivateRepo(repoName);
 
         const token = encodeURIComponent(getGhToken());
-        execSync(
-          `git remote add origin https://x-access-token:${token}@github.com/${repoFullName}.git`,
+        execFileSync(
+          "git",
+          [
+            "remote",
+            "add",
+            "origin",
+            `https://x-access-token:${token}@github.com/${repoFullName}.git`,
+          ],
           {
             cwd: repoDir,
             stdio: "pipe",
           },
         );
-        execSync("git push -u origin main", { cwd: repoDir, stdio: "pipe" });
+        execFileSync("git", ["push", "-u", "origin", "main"], { cwd: repoDir, stdio: "pipe" });
 
         const worktree = await createLegacyWorktreeForTest({
           branchName: "ship-loop",
@@ -166,7 +172,7 @@ describe("daemon checkout ship loop", () => {
           expect(status.baseRef).toBe("main");
         }
 
-        execSync("git branch -m ship-loop-ready", {
+        execFileSync("git", ["branch", "-m", "ship-loop-ready"], {
           cwd: worktree.worktreePath,
           stdio: "pipe",
         });
@@ -286,9 +292,9 @@ describe("daemon checkout ship loop", () => {
       initGitRepo(repoDir);
 
       const remoteDir = path.join(repoDir, "remote.git");
-      execSync(`git init --bare -b main ${remoteDir}`, { stdio: "pipe" });
-      execSync(`git remote add origin ${remoteDir}`, { cwd: repoDir, stdio: "pipe" });
-      execSync("git push -u origin main", { cwd: repoDir, stdio: "pipe" });
+      execFileSync("git", ["init", "--bare", "-b", "main", remoteDir], { stdio: "pipe" });
+      execFileSync("git", ["remote", "add", "origin", remoteDir], { cwd: repoDir, stdio: "pipe" });
+      execFileSync("git", ["push", "-u", "origin", "main"], { cwd: repoDir, stdio: "pipe" });
 
       const worktree = await createLegacyWorktreeForTest({
         branchName: "merge-from-base",
@@ -315,14 +321,14 @@ describe("daemon checkout ship loop", () => {
       }
 
       // Advance local main, but leave the agent branch behind it.
-      execSync("git checkout main", { cwd: repoDir, stdio: "pipe" });
+      execFileSync("git", ["checkout", "main"], { cwd: repoDir, stdio: "pipe" });
       writeFileSync(path.join(repoDir, "base.txt"), "base update\n");
-      execSync("git add base.txt", { cwd: repoDir, stdio: "pipe" });
-      execSync("git -c commit.gpgsign=false commit -m 'base update'", {
+      execFileSync("git", ["add", "base.txt"], { cwd: repoDir, stdio: "pipe" });
+      execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "base update"], {
         cwd: repoDir,
         stdio: "pipe",
       });
-      const baseCommit = execSync("git rev-parse HEAD", { cwd: repoDir, stdio: "pipe" })
+      const baseCommit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: repoDir, stdio: "pipe" })
         .toString()
         .trim();
 
@@ -343,7 +349,7 @@ describe("daemon checkout ship loop", () => {
       expect(mergeFromBase.success).toBe(true);
 
       // Verify the agent branch now contains the base commit.
-      execSync(`git merge-base --is-ancestor ${baseCommit} HEAD`, {
+      execFileSync("git", ["merge-base", "--is-ancestor", baseCommit, "HEAD"], {
         cwd: worktree.worktreePath,
         stdio: "pipe",
       });

@@ -89,6 +89,53 @@ describe("getCommitFileDiff", () => {
     expect(file).toBeNull();
   });
 
+  it("pairs a rename in the commit and diffs the content against the old path", async () => {
+    const repoDir = initRepo();
+    commitFile(repoDir, "old.ts", "const a = 1;\nconst b = 2;\nconst c = 3;\n", "initial");
+    git(["mv", "old.ts", "new.ts"], repoDir);
+    commitFile(repoDir, "new.ts", "const a = 1;\nconst b = 20;\nconst c = 3;\n", "rename");
+    const sha = headSha(repoDir);
+
+    const file = await getCommitFileDiff({ cwd: repoDir, sha, path: "new.ts" });
+
+    expect(file?.path).toBe("new.ts");
+    expect(file?.oldPath).toBe("old.ts");
+    expect(file?.isNew).toBe(false);
+    expect(file?.additions).toBe(1);
+    expect(file?.deletions).toBe(1);
+    const removed = file?.hunks[0]?.lines.find((line) => line.type === "remove");
+    expect(removed?.content).toBe("const b = 2;");
+    expect(removed?.tokens).toContainEqual({ text: "2", style: "number" });
+  });
+
+  it("matches a path with glob characters literally", async () => {
+    const repoDir = initRepo();
+    writeFileSync(join(repoDir, "a1.txt"), "one\n");
+    commitFile(repoDir, "a[1].txt", "literal\n", "initial");
+    commitFile(repoDir, "a1.txt", "one\ntwo\n", "edit a1 only");
+    const sha = headSha(repoDir);
+
+    const file = await getCommitFileDiff({ cwd: repoDir, sha, path: "a[1].txt" });
+
+    expect(file).toBeNull();
+  });
+
+  it("highlights a deleted file from history, not the recreated working-tree file", async () => {
+    const repoDir = initRepo();
+    commitFile(repoDir, "gone.ts", "const kept = 1;\n", "initial");
+    git(["rm", "-q", "gone.ts"], repoDir);
+    git(["-c", "commit.gpgsign=false", "commit", "-m", "delete"], repoDir);
+    const sha = headSha(repoDir);
+    writeFileSync(join(repoDir, "gone.ts"), "// unrelated working-tree content\n");
+
+    const file = await getCommitFileDiff({ cwd: repoDir, sha, path: "gone.ts" });
+
+    expect(file?.isDeleted).toBe(true);
+    const removed = file?.hunks[0]?.lines.find((line) => line.type === "remove");
+    expect(removed?.content).toBe("const kept = 1;");
+    expect(removed?.tokens).toContainEqual({ text: "1", style: "number" });
+  });
+
   it("returns a merge commit diff against its first parent", async () => {
     const repoDir = initRepo();
     commitFile(repoDir, "README.md", "base\n", "initial");

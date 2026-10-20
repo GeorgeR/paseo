@@ -31,11 +31,15 @@ export interface ParsedDiffFile {
 interface HighlightDiffWithFileContentOptions {
   oldFileContent?: string | null;
   newFileContent?: string | null;
+  // Diffs of historical revisions must not read today's working-tree file when the
+  // new side is missing; they fall back to tokens reconstructed from the hunks.
+  workingTreeFallback?: boolean;
 }
 
 interface ParseAndHighlightDiffOptions {
   getOldFileContent?: (file: ParsedDiffFile) => Promise<string | null>;
   getNewFileContent?: (file: ParsedDiffFile) => Promise<string | null>;
+  workingTreeFallback?: boolean;
 }
 
 /**
@@ -327,7 +331,7 @@ export async function highlightDiffWithFileContent(
       : null;
   if (typeof options.newFileContent === "string") {
     newTokensByLine = buildFullFileTokenLookup(options.newFileContent, file.path);
-  } else {
+  } else if (options.workingTreeFallback !== false) {
     try {
       const fileContent = await readFile(resolve(cwd, file.path), "utf-8");
       newTokensByLine = buildFullFileTokenLookup(fileContent, file.path);
@@ -404,6 +408,7 @@ export async function parseAndHighlightDiff(
       return highlightDiffWithFileContent(file, cwd, {
         oldFileContent: oldFileContent ?? undefined,
         newFileContent: newFileContent ?? undefined,
+        workingTreeFallback: options.workingTreeFallback,
       });
     }),
   );

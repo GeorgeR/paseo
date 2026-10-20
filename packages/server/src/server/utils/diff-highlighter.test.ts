@@ -659,6 +659,28 @@ describe("highlightDiffWithFileContent", () => {
     expect(addedLine?.tokens).toContainEqual({ text: "3", style: "number" });
   });
 
+  it("does not read the working tree when the working-tree fallback is off", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "diff-highlight-no-worktree-"));
+
+    try {
+      writeFileSync(join(cwd, "example.ts"), "// line one\n// line two\n// line three\n", "utf8");
+      const file = parseDiff(SIMPLE_DIFF)[0];
+
+      const highlighted = await highlightDiffWithFileContent(file, cwd, {
+        oldFileContent: "const foo = 1;\nconst bar = 2;\n",
+        newFileContent: null,
+        workingTreeFallback: false,
+      });
+      const contextLine = highlighted.hunks[0].lines.find((line) => line.type === "context");
+
+      expect(contextLine?.content).toBe("const foo = 1;");
+      expect(contextLine?.tokens?.some((token) => token.style === "comment")).toBe(false);
+      expect(contextLine?.tokens).toContainEqual({ text: "1", style: "number" });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("uses the old file content to preserve syntax context for removed lines", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "diff-highlight-old-file-"));
 

@@ -53,6 +53,7 @@ import {
   createRunGitCommand,
   runGitCommand,
   type RunGitCommand,
+  withGitCommandSignal,
 } from "../utils/run-git-command.js";
 import { branchNameFromRef } from "../utils/worktree-metadata.js";
 import { listPaseoWorktrees, type PaseoWorktreeInfo } from "../utils/worktree.js";
@@ -602,6 +603,8 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
   private readonly disposeController = new AbortController();
   private disposed = false;
   private disposePromise: Promise<void> | null = null;
+  /** Snapshot reads dispose aborts and then waits for, so no Git process outlives the service. */
+  private readonly pendingSnapshotReads = new Set<Promise<unknown>>();
   private readonly snapshotUpdatedListeners = new Set<WorkspaceGitSnapshotUpdatedListener>();
   private readonly workspaceTargets = new Map<string, WorkspaceGitTarget>();
   private readonly repoTargets = new Map<string, RepoGitTarget>();
@@ -1048,7 +1051,10 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     this.workingTreeWatchResolutions.clear();
     this.workingTreeWatchAliases.clear();
     this.snapshotUpdatedListeners.clear();
-    this.disposePromise = this.fileObserver.close();
+    const pendingReads = Promise.allSettled(this.pendingSnapshotReads);
+    this.disposePromise = Promise.all([this.fileObserver.close(), pendingReads]).then(
+      () => undefined,
+    );
     return this.disposePromise;
   }
 
@@ -1310,6 +1316,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     return this.loadCheckoutFacts(target, {
       paseoHome: this.paseoHome,
       logger: this.logger,
+      runGitCommand: withGitCommandSignal(runGitCommand, this.disposeController.signal),
     });
   }
 
@@ -1333,7 +1340,14 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
         }
       });
     target.factsPromise = promise;
+    this.trackSnapshotRead(promise);
     return promise;
+  }
+
+  private trackSnapshotRead(promise: Promise<unknown>): void {
+    this.pendingSnapshotReads.add(promise);
+    const forget = () => this.pendingSnapshotReads.delete(promise);
+    promise.then(forget, forget);
   }
 
   private isActiveObservedWorkspaceTarget(target: WorkspaceGitTarget): boolean {
@@ -3063,6 +3077,7 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
       request,
       queued: null,
     };
+    this.trackSnapshotRead(promise);
 
     return promise;
   }
@@ -3177,7 +3192,10 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
         });
       }
       try {
-        const runRefreshGitCommand = createRunGitCommand(`workspace-refresh:${request.reason}`);
+        const runRefreshGitCommand = withGitCommandSignal(
+          createRunGitCommand(`workspace-refresh:${request.reason}`),
+          this.disposeController.signal,
+        );
         const admittedSnapshot = await this.workspaceRefreshLimit(() => {
           if (target.closed || this.workspaceTargets.get(target.cwd) !== target) {
             return null;

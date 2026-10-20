@@ -4,6 +4,7 @@ import path, { join } from "node:path";
 import type pino from "pino";
 import type { ForgeService } from "../services/forge-service.js";
 import type {
+  CheckoutContext,
   CheckoutSnapshotFacts,
   CheckoutStatusGit,
   PullRequestStatusResult,
@@ -741,6 +742,36 @@ describe("WorkspaceGitServiceImpl", () => {
       }
       expect(service.getMetrics().workspaceRefreshAdmissionActiveCount).toBe(0);
     });
+  });
+
+  test("dispose aborts in-flight checkout fact reads and waits for them to settle", async () => {
+    const factsGate = createDeferred<void>();
+    let factsContext: CheckoutContext | undefined;
+    const getCheckoutSnapshotFacts = vi.fn(async (cwd: string, context?: CheckoutContext) => {
+      factsContext = context;
+      await factsGate.promise;
+      return createCheckoutSnapshotFacts(cwd);
+    });
+    const service = createService({ getCheckoutSnapshotFacts });
+    void service.getSnapshot(REPO_CWD).catch(() => undefined);
+    await vi.waitFor(() => {
+      expect(getCheckoutSnapshotFacts).toHaveBeenCalledTimes(1);
+    });
+
+    let disposed = false;
+    const disposal = service.dispose().then(() => {
+      disposed = true;
+      return disposed;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(disposed).toBe(false);
+    await expect(
+      factsContext?.runGitCommand?.(["--version"], { cwd: os.tmpdir() }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    factsGate.resolve();
+    await disposal;
+    expect(disposed).toBe(true);
   });
 
   test("cleans a watcher subscription that resolves after its deadline", async () => {

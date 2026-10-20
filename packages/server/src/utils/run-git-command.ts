@@ -53,6 +53,8 @@ export interface GitCommandOptions {
   timeout?: number;
   maxOutputBytes?: number;
   acceptExitCodes?: number[];
+  /** Aborting kills the running process, or skips it while it waits for a process slot. */
+  signal?: AbortSignal;
 }
 
 export interface GitCommandResult<Output = string> {
@@ -70,6 +72,18 @@ export type RunGitCommand = (
 
 export function createRunGitCommand(provenance: string): RunGitCommand {
   return (args, options) => runGitCommandWithProvenance(args, options, provenance);
+}
+
+/** Every command `run` starts is aborted by `signal` unless the caller passes its own. */
+export function withGitCommandSignal(run: RunGitCommand, signal: AbortSignal): RunGitCommand {
+  return (args, options) => run(args, { signal, ...options });
+}
+
+export class GitCommandAbortedError extends Error {
+  constructor(command: string, cause: unknown) {
+    super(`Git command aborted: ${command}`, { cause });
+    this.name = "AbortError";
+  }
 }
 
 export interface GitCommandMetric {
@@ -281,6 +295,11 @@ function executeGitCommand<Output>(
   decode: (output: Buffer) => Output,
   provenance?: string,
 ): Promise<GitCommandResult<Output>> {
+  if (options.signal?.aborted) {
+    return Promise.reject(
+      new GitCommandAbortedError(formatGitCommand(args), options.signal.reason),
+    );
+  }
   const metricsState = submitGitCommandMetric(args, options.cwd);
   const commandTrace = submitGitCommandTrace(args, options.cwd, {
     active: gitProcessScheduler.activeCount,
@@ -391,6 +410,11 @@ function executeGitCommand<Output>(
         settle(() => reject(processError));
       };
 
+      if (options.signal?.aborted) {
+        rejectSpawnFailure(new GitCommandAbortedError(command, options.signal.reason));
+        return;
+      }
+
       let child: ReturnType<typeof spawnProcess>;
       try {
         // `core.quotepath=false` makes git emit raw UTF-8 paths instead of
@@ -419,6 +443,14 @@ function executeGitCommand<Output>(
         rejectSpawnFailure(new Error("Git process did not expose piped stdout and stderr"));
         return;
       }
+
+      const abortSignal = options.signal;
+      const abort = () => {
+        child.kill("SIGKILL");
+        settle(() => reject(new GitCommandAbortedError(command, abortSignal?.reason)));
+      };
+      abortSignal?.addEventListener("abort", abort, { once: true });
+      child.once("close", () => abortSignal?.removeEventListener("abort", abort));
 
       timer = setTimeout(() => {
         timeoutError = new Error(`Git command timed out after ${timeout}ms: ${command}`);

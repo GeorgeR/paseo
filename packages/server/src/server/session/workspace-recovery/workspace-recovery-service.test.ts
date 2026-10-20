@@ -477,3 +477,77 @@ test("restore rejects a branch checked out elsewhere without inventing another b
     }).trim(),
   ).toBe("* feature");
 });
+
+test("restore reports worktree_branch_missing when the saved branch was deleted", async () => {
+  const fixture = await createBaseRecoveryFixture("refs/heads/main");
+  await fixture.archiveAndRemove();
+  execFileSync("git", ["branch", "-D", "feature"], { cwd: fixture.repoDir, stdio: "pipe" });
+
+  await expect(fixture.service.inspect(fixture.workspace.workspaceId)).resolves.toEqual({
+    kind: "unavailable",
+    workspaceId: fixture.workspace.workspaceId,
+    reason: "worktree_branch_missing",
+    message: 'The branch "feature" for this archived worktree no longer exists.',
+  });
+  await expect(fixture.service.restore(fixture.workspace.workspaceId)).rejects.toThrow(
+    'The branch "feature" for this archived worktree no longer exists.',
+  );
+  expect(existsSync(fixture.workspace.cwd)).toBe(false);
+  expect((await fixture.registry.get(fixture.workspace.workspaceId))?.archivedAt).not.toBeNull();
+});
+
+test("restore reports worktree_branch_missing when the branch is gone locally and on origin", async () => {
+  const fixture = await createBaseRecoveryFixture("refs/heads/main");
+  const remote = join(fixture.tempDir, "remote.git");
+  execFileSync("git", ["init", "--bare", remote], { stdio: "pipe" });
+  execFileSync("git", ["remote", "add", "origin", remote], { cwd: fixture.repoDir });
+  execFileSync("git", ["push", "origin", "main"], { cwd: fixture.repoDir, stdio: "pipe" });
+  await fixture.archiveAndRemove();
+  execFileSync("git", ["branch", "-D", "feature"], { cwd: fixture.repoDir, stdio: "pipe" });
+
+  await expect(fixture.service.inspect(fixture.workspace.workspaceId)).resolves.toMatchObject({
+    kind: "unavailable",
+    reason: "worktree_branch_missing",
+  });
+});
+
+test("restore offers a branch that only origin still has without a remote-tracking ref", async () => {
+  const fixture = await createBaseRecoveryFixture("refs/heads/main");
+  const remote = join(fixture.tempDir, "remote.git");
+  execFileSync("git", ["init", "--bare", remote], { stdio: "pipe" });
+  execFileSync("git", ["push", remote, "feature"], { cwd: fixture.repoDir, stdio: "pipe" });
+  execFileSync("git", ["remote", "add", "origin", remote], { cwd: fixture.repoDir });
+  await fixture.archiveAndRemove();
+  execFileSync("git", ["branch", "-D", "feature"], { cwd: fixture.repoDir, stdio: "pipe" });
+
+  await expect(fixture.service.inspect(fixture.workspace.workspaceId)).resolves.toMatchObject({
+    kind: "recoverable",
+    action: "restore",
+    branch: "feature",
+  });
+  await expect(fixture.service.restore(fixture.workspace.workspaceId)).resolves.toEqual({
+    workspaceId: fixture.workspace.workspaceId,
+    action: "restore",
+  });
+  expect(
+    await getCheckoutStatus(fixture.workspace.cwd, { paseoHome: fixture.paseoHome }),
+  ).toMatchObject({ currentBranch: "feature" });
+});
+
+test("restore with the saved branch present still recreates the worktree", async () => {
+  const fixture = await createBaseRecoveryFixture("refs/heads/main");
+  await fixture.archiveAndRemove();
+
+  await expect(fixture.service.inspect(fixture.workspace.workspaceId)).resolves.toMatchObject({
+    kind: "recoverable",
+    action: "restore",
+    branch: "feature",
+  });
+  await expect(fixture.service.restore(fixture.workspace.workspaceId)).resolves.toEqual({
+    workspaceId: fixture.workspace.workspaceId,
+    action: "restore",
+  });
+  expect(
+    await getCheckoutStatus(fixture.workspace.cwd, { paseoHome: fixture.paseoHome }),
+  ).toMatchObject({ currentBranch: "feature" });
+});

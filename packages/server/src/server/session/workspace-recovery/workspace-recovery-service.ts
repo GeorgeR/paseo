@@ -124,6 +124,15 @@ export function createWorkspaceRecoveryService(deps: {
       };
     }
 
+    if (workspace.branch && (await isRestoreBranchMissing(sourceRepoRoot, workspace.branch))) {
+      return {
+        kind: "unavailable",
+        workspaceId,
+        reason: "worktree_branch_missing",
+        message: `The branch "${workspace.branch}" for this archived worktree no longer exists.`,
+      };
+    }
+
     return createRecoveryPlan({ action: "restore", workspace, sourceRepoRoot });
   }
 
@@ -226,6 +235,42 @@ export function createWorkspaceRecoveryService(deps: {
   }
 
   return { inspect, restore };
+}
+
+// Mirrors how createWorktree resolves a "restore" source: it uses the local branch
+// or fetches it from origin. Returns true only when Git confirms the branch is gone,
+// so an unreachable origin still lets restore try and report its own error.
+async function isRestoreBranchMissing(repoRoot: string, branch: string): Promise<boolean> {
+  try {
+    for (const ref of [`refs/heads/${branch}`, `refs/remotes/origin/${branch}`]) {
+      const { exitCode } = await runGitCommand(["show-ref", "--verify", "--quiet", ref], {
+        cwd: repoRoot,
+        acceptExitCodes: [0, 1],
+      });
+      if (exitCode === 0) {
+        return false;
+      }
+    }
+    const origin = await runGitCommand(["config", "--get", "remote.origin.url"], {
+      cwd: repoRoot,
+      acceptExitCodes: [0, 1],
+    });
+    if (origin.exitCode !== 0) {
+      return true;
+    }
+    const remote = await runGitCommand(
+      ["ls-remote", "--exit-code", "--heads", "origin", `refs/heads/${branch}`],
+      {
+        cwd: repoRoot,
+        timeout: 30_000,
+        envOverlay: { GIT_TERMINAL_PROMPT: "0" },
+        acceptExitCodes: [0, 2],
+      },
+    );
+    return remote.exitCode === 2;
+  } catch {
+    return false;
+  }
 }
 
 async function resolveRecoveryBase(repoRoot: string, recordedBase: string | null): Promise<string> {

@@ -36,7 +36,7 @@ export interface GitMutationService {
 
 type GitMutationGitSource = Pick<
   WorkspaceGitService,
-  "validateBranchRef" | "getSnapshot" | "hasLocalBranch" | "invalidateForge"
+  "validateBranchRef" | "getSnapshot" | "hasLocalBranch" | "invalidateForge" | "invalidateStashes"
 >;
 
 export function createGitMutationService(deps: {
@@ -79,6 +79,9 @@ export function createGitMutationService(deps: {
   ): Promise<void> {
     if (options?.invalidateForge) {
       workspaceGitService.invalidateForge(cwd);
+    }
+    if (reason === "stash-push" || reason === "stash-pop") {
+      workspaceGitService.invalidateStashes();
     }
     try {
       await workspaceGitService.getSnapshot(cwd, { force: true, reason });

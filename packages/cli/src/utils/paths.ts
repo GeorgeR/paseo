@@ -24,3 +24,15 @@ export function isSameOrDescendantPath(basePath: string, candidatePath: string):
     normalizedCandidate === normalizedBase || normalizedCandidate.startsWith(normalizedBase + "/")
   );
 }
+
+/**
+ * Replace the home directory prefix with `~` for human-readable table output.
+ * Never use this for JSON/YAML output: machine consumers need absolute paths.
+ */
+export function shortenHomePath(path: string): string {
+  const home = process.env.HOME;
+  if (home && path.startsWith(home)) {
+    return "~" + path.slice(home.length);
+  }
+  return path;
+}

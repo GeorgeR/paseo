@@ -3,7 +3,7 @@ import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import { connectToDaemon } from "../../utils/client.js";
 import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../../output/index.js";
 import { collectMultiple } from "../../utils/command-options.js";
-import { isSameOrDescendantPath } from "../../utils/paths.js";
+import { isSameOrDescendantPath, shortenHomePath } from "../../utils/paths.js";
 
 type FetchAgentsOptions = NonNullable<
   Parameters<Awaited<ReturnType<typeof connectToDaemon>>["fetchAgents"]>[0]
@@ -48,15 +48,6 @@ function relativeTime(date: Date | string): string {
   return `${Math.floor(seconds / 86400)} days ago`;
 }
 
-/** Shorten home directory in path */
-function shortenPath(path: string): string {
-  const home = process.env.HOME;
-  if (home && path.startsWith(home)) {
-    return "~" + path.slice(home.length);
-  }
-  return path;
-}
-
 function normalizeModelId(modelId: string | null | undefined): string | null {
   if (typeof modelId !== "string") return null;
   const normalized = modelId.trim();
@@ -83,13 +74,13 @@ export const agentLsSchema: OutputSchema<AgentListItem> = {
         return undefined;
       },
     },
-    { header: "CWD", field: "cwd", width: 30 },
+    { header: "CWD", field: (item) => shortenHomePath(item.cwd), width: 30 },
     { header: "CREATED", field: "created", width: 15 },
   ],
 };
 
 /** Transform agent snapshot to AgentListItem */
-function toListItem(agent: AgentSnapshotPayload): AgentListItem {
+export function toListItem(agent: AgentSnapshotPayload): AgentListItem {
   const model = normalizeModelId(agent.runtimeInfo?.model) ?? normalizeModelId(agent.model);
   return {
     id: agent.id,
@@ -98,7 +89,7 @@ function toListItem(agent: AgentSnapshotPayload): AgentListItem {
     provider: model ? `${agent.provider}/${model}` : agent.provider,
     thinking: agent.effectiveThinkingOptionId ?? "auto",
     status: agent.status,
-    cwd: shortenPath(agent.cwd),
+    cwd: agent.cwd,
     created: relativeTime(agent.createdAt),
   };
 }

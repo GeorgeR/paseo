@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import { basename } from "node:path";
 import { connectToDaemon } from "../../utils/client.js";
+import { shortenHomePath } from "../../utils/paths.js";
 import { resolveRepositoryDirectory } from "./repository-directory.js";
 import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../../output/index.js";
 
@@ -10,15 +11,6 @@ export interface WorktreeListItem {
   branch: string;
   cwd: string;
   agent: string;
-}
-
-/** Shorten home directory in path */
-function shortenPath(path: string): string {
-  const home = process.env.HOME;
-  if (home && path.startsWith(home)) {
-    return "~" + path.slice(home.length);
-  }
-  return path;
 }
 
 /** Extract worktree name from path */
@@ -32,12 +24,39 @@ export const worktreeLsSchema: OutputSchema<WorktreeListItem> = {
   columns: [
     { header: "NAME", field: "name", width: 20 },
     { header: "BRANCH", field: "branch", width: 25 },
-    { header: "CWD", field: "cwd", width: 45 },
+    { header: "CWD", field: (item) => shortenHomePath(item.cwd), width: 45 },
     { header: "AGENT", field: "agent", width: 10 },
   ],
 };
 
 export type WorktreeLsResult = ListResult<WorktreeListItem>;
+
+type DaemonClient = Awaited<ReturnType<typeof connectToDaemon>>;
+type PaseoWorktree = Awaited<ReturnType<DaemonClient["getPaseoWorktreeList"]>>["worktrees"][number];
+
+export function toWorktreeLsResult(
+  worktrees: Pick<PaseoWorktree, "worktreePath" | "branchName">[],
+  agents: { id: string; cwd: string }[],
+): WorktreeLsResult {
+  // Build a map of worktree paths to agent IDs
+  const worktreeAgentMap = new Map<string, string>();
+  for (const agent of agents) {
+    worktreeAgentMap.set(agent.cwd, agent.id.slice(0, 7));
+  }
+
+  const items: WorktreeListItem[] = worktrees.map((wt) => ({
+    name: extractWorktreeName(wt.worktreePath),
+    branch: wt.branchName ?? "-",
+    cwd: wt.worktreePath,
+    agent: worktreeAgentMap.get(wt.worktreePath) ?? "-",
+  }));
+
+  return {
+    type: "list",
+    data: items,
+    schema: worktreeLsSchema,
+  };
+}
 
 export interface WorktreeLsOptions extends CommandOptions {
   host?: string;
@@ -68,24 +87,7 @@ export async function runLsCommand(
       throw error;
     }
 
-    // Build a map of worktree paths to agent IDs
-    const worktreeAgentMap = new Map<string, string>();
-    for (const agent of agents) {
-      worktreeAgentMap.set(agent.cwd, agent.id.slice(0, 7));
-    }
-
-    const items: WorktreeListItem[] = response.worktrees.map((wt) => ({
-      name: extractWorktreeName(wt.worktreePath),
-      branch: wt.branchName ?? "-",
-      cwd: shortenPath(wt.worktreePath),
-      agent: worktreeAgentMap.get(wt.worktreePath) ?? "-",
-    }));
-
-    return {
-      type: "list",
-      data: items,
-      schema: worktreeLsSchema,
-    };
+    return toWorktreeLsResult(response.worktrees, agents);
   } catch (err) {
     await client.close().catch(() => {});
 

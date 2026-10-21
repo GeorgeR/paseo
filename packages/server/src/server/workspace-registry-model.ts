@@ -5,6 +5,7 @@ import type {
   ProjectPlacementPayload,
 } from "@getpaseo/protocol/messages";
 import type { PersistedWorkspaceRecord } from "./workspace-registry.js";
+import { redactUrlCredentials } from "../utils/redact-credentials.js";
 
 export type PersistedProjectKind = "git" | "non_git";
 export type PersistedWorkspaceKind = "local_checkout" | "worktree" | "directory";
@@ -215,7 +216,7 @@ export function checkoutLiteFromGitSnapshot(
       cwd,
       isGit: true,
       currentBranch: git.currentBranch,
-      remoteUrl: git.remoteUrl,
+      remoteUrl: git.remoteUrl && redactUrlCredentials(git.remoteUrl),
       worktreeRoot: git.repoRoot ?? cwd,
       isPaseoOwnedWorktree: true,
       mainRepoRoot: git.mainRepoRoot,
@@ -225,7 +226,7 @@ export function checkoutLiteFromGitSnapshot(
     cwd,
     isGit: true,
     currentBranch: git.currentBranch,
-    remoteUrl: git.remoteUrl,
+    remoteUrl: git.remoteUrl && redactUrlCredentials(git.remoteUrl),
     worktreeRoot: git.repoRoot ?? cwd,
     isPaseoOwnedWorktree: false,
     mainRepoRoot: git.mainRepoRoot,

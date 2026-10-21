@@ -26,6 +26,7 @@ import {
   WorkspaceGitServiceImpl,
   type WorkspaceGitRuntimeSnapshot,
 } from "./workspace-git-service.js";
+import { buildCheckoutStatusPayloadFromSnapshot } from "./checkout/status-projection.js";
 
 const REPO_CWD = resolvePath("/tmp/repo");
 
@@ -487,6 +488,42 @@ describe("WorkspaceGitServiceImpl primitive refresh entrypoint", () => {
       expect(metrics.provenanceTop).toEqual([
         ["workspace-refresh:provenance-test", metrics.submitted],
       ]);
+    } finally {
+      service.dispose();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test("snapshot, checkout status, and checkout lite omit remote URL credentials", async () => {
+    const tempDir = realpathSync(mkdtempSync(join(tmpdir(), "workspace-git-credentials-")));
+    const repoDir = join(tempDir, "repo");
+    mkdirSync(repoDir, { recursive: true });
+    execFileSync("git", ["init", "-b", "main"], { cwd: repoDir, stdio: "pipe" });
+    execFileSync(
+      "git",
+      ["remote", "add", "origin", "https://user:s3cr3t-token@git.example.test/acme/x.git"],
+      { cwd: repoDir, stdio: "pipe" },
+    );
+    const service = createService({
+      getCheckoutSnapshotFacts: getCheckoutSnapshotFactsUncached as never,
+      getCheckoutStatus: getCheckoutStatusUncached as never,
+    });
+
+    try {
+      const snapshot = await service.getSnapshot(repoDir, {
+        force: true,
+        reason: "credentials-test",
+      });
+      const status = buildCheckoutStatusPayloadFromSnapshot({
+        cwd: repoDir,
+        requestId: "credentials-test",
+        snapshot,
+      });
+      const checkout = await service.getCheckout(repoDir);
+
+      expect(snapshot.git.remoteUrl).toBe("https://git.example.test/acme/x.git");
+      expect(status.remoteUrl).toBe("https://git.example.test/acme/x.git");
+      expect(checkout.remoteUrl).toBe("https://git.example.test/acme/x.git");
     } finally {
       service.dispose();
       rmSync(tempDir, { recursive: true, force: true });

@@ -12,6 +12,7 @@ import {
   startGitCommandTrace,
   submitGitCommandTrace,
 } from "./git-command-trace.js";
+import { redactUrlCredentials } from "./redact-credentials.js";
 import { spawnProcess } from "./spawn.js";
 import {
   GitProcessScheduler,
@@ -542,7 +543,7 @@ function executeGitCommand<Output>(
         });
 
         if (!truncated && !acceptExitCodes.includes(exitCode ?? -1)) {
-          const stderrPreview = result.stderr.trim() || "(no stderr)";
+          const stderrPreview = redactUrlCredentials(result.stderr.trim()) || "(no stderr)";
           const truncationNote = result.truncated ? " (stdout truncated)" : "";
 
           settle(() =>
@@ -572,8 +573,9 @@ function executeGitCommand<Output>(
 
 export const runGitCommand: RunGitCommand = runGitCommandWithProvenance;
 
+/** The command as diagnostics show it: remote URL credentials never appear. */
 function formatGitCommand(args: string[]): string {
-  return ["git", ...args].join(" ");
+  return redactUrlCredentials(["git", ...args].join(" "));
 }
 
 function getGitOperation(args: string[]): string {
